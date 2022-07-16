@@ -1,0 +1,11 @@
+dependencies:
+  - "**/requirements.txt"
+
+documentation:
+  - "**/*.md"
+
+python:
+  - "**/.py"
+
+tests:
+  - "**/test*"
