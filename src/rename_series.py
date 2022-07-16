@@ -1,5 +1,6 @@
 import os
 import re
+import subprocess
 import click
 from imdb import IMDb
 from similarity.damerau import Damerau
@@ -77,32 +78,6 @@ def sanitize_name(file_name):
     return file_name.replace("-", " ").replace(".", " ").strip()
 
 
-def FindDet(inputString):
-    inputString = inputString.replace(" x ", "x", 1)
-    filteredList = filter(None, re.split(r"(\dx\d\d)", inputString))
-    i = 0
-    for element in filteredList:
-        Det = element
-        Det = Det.replace(".", " ")
-        Det = Det.replace("-", " ")
-        Det = Det.strip()
-        if i == 1:
-            return str(Det)
-        i = i + 1
-
-
-def FindSeason(inputString):
-    Det = FindDet(inputString)
-    Season = Det.split("x")[0]
-    return str(Season)
-
-
-def FindEpisode(inputString):
-    Det = FindDet(inputString)
-    Episode = Det.split("x")[1]
-    return str(Episode)
-
-
 def AddZero(inputString):
     if int(inputString) < 10:
         return str("0" + str(int(inputString)))
@@ -111,8 +86,6 @@ def AddZero(inputString):
 
 def rename_series(path):
     print("Reading Files....")
-
-    import ipdb
 
     for (dirpath, _, _) in os.walk(path):
         files = os.listdir(dirpath)
@@ -151,17 +124,20 @@ def rename_series(path):
             file_name = removeIllegal(file_name).strip()
             Final = f"SE{season}EP{episode} - {file_name}{extension}"
 
-            path_new_1 = os.path.join(file_name, f"Season {season}")  # type: ignore
+            path_output = os.path.join(file_name, f"Season {season}")  # type: ignore
 
             try:
                 os.mkdir(file_name)
-                os.mkdir(path_new_1)
+                os.mkdir(path_output)
             except FileExistsError:
                 pass
             try:
                 if click.confirm(f'Rename "{file}" to "{Final}"?', default=True):
-                    os.rename(
-                        os.path.join(dirpath, file), os.path.join(path_new_1, Final)
+                    # cross device mv
+                    subprocess.check_call(
+                        f"mv "{file}" "{os.path.join(path_output, Final)}",
+                        cwd=path,
+                        shell=True
                     )
             except FileExistsError:
                 print(f"Error - File Already Exist: {Final}")
