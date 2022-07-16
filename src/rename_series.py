@@ -1,13 +1,7 @@
-"""
-  Code Written by ~KK~
-  To Automate the boring process of renaming files for your TV Shows library
-  Useful for organising bulk media files or frequent updation of
-  your XBMC library (Like Kodi, Plex and OSMC)
-"""
 import os
 import re
-import getopt
-import sys
+import subprocess
+import click
 from imdb import IMDb
 from similarity.damerau import Damerau
 
@@ -53,66 +47,35 @@ def removeIllegal(str):
     return str
 
 
-# has Condition #1
+RE_X = r"(\d)+\s+x\s+(\d+)"
+
+
 def hasX(inputString):
-    return bool(re.search(r"\dx\d", inputString) or re.search(r"\d x \d", inputString))
+    return bool(re.search(RE_X, inputString, re.IGNORECASE))
 
 
-# has Condition #2
+RE_SE = r"SE?(\d+)EP?(\d+)"
+
+
 def hasSE(inputString):
-    return bool(
-        re.search(r"S\d\dE\d\d", inputString)
-        or re.search(r"S\dE\d\d", inputString)
-        or re.search(r"s\d\de\d\d", inputString)
-        or re.search(r"s\de\d\d", inputString)
-    )
+    return bool(re.search(RE_SE, inputString, re.IGNORECASE))
 
 
-# has Condition #3
-def hasSEP(inputString):
-    return bool(
-        re.search(r"S\d\dEP\d\d", inputString)
-        or re.search(r"S\dEP\d\d", inputString)
-        or re.search(r"s\d\dep\d\d", inputString)
-        or re.search(r"s\dep\d\d", inputString)
-    )
+def get_season_episode(file_name: str):
+    if hasSE(file_name):
+        season, episode = re.search(RE_SE, file_name, re.IGNORECASE).groups()
+        return AddZero(season), AddZero(episode)
+    elif hasX(file_name):
+        season, episode = re.search(RE_X, file_name, re.IGNORECASE).groups()
+        return AddZero(season), AddZero(episode)
+
+    return "", ""
 
 
-def FindName(inputString):
-    inputString = inputString.replace(" x ", "x", 1)
-    filteredList = filter(None, re.split(r"(\dx\d)", inputString))
-    for element in filteredList:
-        Name = element
-        Name = Name.replace("-", " ")
-        Name = Name.replace(".", " ")
-        Name = Name.strip()
-        return str(Name)
-
-
-def FindDet(inputString):
-    inputString = inputString.replace(" x ", "x", 1)
-    filteredList = filter(None, re.split(r"(\dx\d\d)", inputString))
-    i = 0
-    for element in filteredList:
-        Det = element
-        Det = Det.replace(".", " ")
-        Det = Det.replace("-", " ")
-        Det = Det.strip()
-        if i == 1:
-            return str(Det)
-        i = i + 1
-
-
-def FindSeason(inputString):
-    Det = FindDet(inputString)
-    Season = Det.split("x")[0]
-    return str(Season)
-
-
-def FindEpisode(inputString):
-    Det = FindDet(inputString)
-    Episode = Det.split("x")[1]
-    return str(Episode)
+def sanitize_name(file_name):
+    file_name = re.sub(RE_X, "", file_name)
+    file_name = re.sub(RE_SE, "", file_name)
+    return file_name.replace("-", " ").replace(".", " ").strip()
 
 
 def AddZero(inputString):
@@ -121,211 +84,63 @@ def AddZero(inputString):
     return inputString
 
 
-def split_line(text):
-    words = text.split()
-    return words
-
-
-# Before Driver
-def init(path="NULL"):
-    try:
-        os.mkdir(str(os.getcwd()) + "\\Input")
-    except:
-        pass
-    try:
-        os.mkdir(str(os.getcwd()) + "\\Input\\Series")
-    except:
-        pass
-    main(path)
-
-
-# Driver Code
-def rename_series(path="NULL"):
-    if path == "NULL":
-        cwd = str(os.getcwd())
-        path = cwd + "\\Input\\Series\\"
-        case = 1
-    else:
-        cwd = path
-        print(path)
-        case = 2
-    path_new = path_new_1 = rest = Final = "NULL"
-    NAME = ""
-    Copy = ""
-    i = 0
-    ErrorFlag = 0
-    FileFlag = 0
+def rename_series(path):
     print("Reading Files....")
-    # main loop
-    for (dirpath, dirnames, filenames) in os.walk(path):
+
+    for (dirpath, _, _) in os.walk(path):
         files = os.listdir(dirpath)
         for file in files:
-            CheckFlag = 0
-            temp = file
-            extn = file[(len(file) - 4) : len(file)]
-            """Logic Starts here"""
-            # All possible media extensions go here
-            media_extensions = [".mp4", ".mkv", ".srt", ".avi", ".wmv"]
-            if (file.endswith(ex1) for ex1 in media_extensions):
-                print(str(i) + " File(s) Processed....")
-                rest = temp.split(extn, 1)[0]
-                unwanted_stuff = [
-                    ".1080p",
-                    ".720p",
-                    "HDTV",
-                    "x264",
-                    "AAC",
-                    "E-Subs",
-                    "ESubs",
-                    "WEBRip",
-                    "WEB",
-                    "BluRay",
-                ]
-                for stuff in unwanted_stuff:
-                    rest = rest.replace(stuff, "")
-                rest = rest.replace(".", " ")
-                # Specifically written for'x' type Files
-                if hasX(file):
-                    CheckFlag = 1
-                    NAME = FindName(rest)
-                    SEASON = FindSeason(rest)
-                    EPISODE = AddZero(FindEpisode(rest))
-                    Final = "S" + AddZero(FindSeason(rest)) + "E" + EPISODE + extn
+            _, file = os.path.split(file)
+            file_name, extension = os.path.splitext(file)
 
-                # Specifically written for 'S__E__' type Files
-                elif hasSE(file):
-                    NAME = ""
-                    words = split_line(rest)
-                    for word in words:
-                        if hasSE(word):
-                            Final = word
-                            break
-                        if hasSEP(word):
-                            Final = word
-                            break
-                        else:
-                            NAME = NAME + word + " "
-                    brackets_ = re.findall("[(]+(.*?)[)]", NAME)
-                    # print(brackets_)
-                    for yy in brackets_:
-                        try:
-                            NAME = NAME.replace(yy, "")
-                        except:
-                            pass
-                    if NAME != Copy:
-                        Copy = NAME
-                        series = main_imdb(NAME)
-                        NAME = find_most_apt(NAME, series)
-                        NAME = removeIllegal(NAME)
-                        NAME = NAME.strip()
-                        Restore = NAME
-                    else:
-                        NAME = Restore
-                    TEMP = Final = Final.strip()
-                    TEMP = TEMP.replace("S", "")
-                    SEASON = TEMP.split("E", 1)[0]
-                    EPISODE = TEMP.split("E", 1)[1]
-                    Final = Final + extn
-                    CheckFlag = 1
+            if extension not in [".mp4", ".mkv", ".srt", ".avi", ".wmv"]:
+                continue
 
-            if CheckFlag == 1:
-                if case == 1:
-                    path_new = cwd + "\\Output\\Series\\" + NAME
-                    path_new_1 = (
-                        cwd
-                        + "\\Output\\Series\\"
-                        + NAME
-                        + "\\Season "
-                        + str(int(SEASON))
+            unwanted_stuff = [
+                ".1080p",
+                ".720p",
+                "HDTV",
+                "x264",
+                "AAC",
+                "E-Subs",
+                "ESubs",
+                "WEBRip",
+                "WEB",
+                "BluRay",
+                "Bluray",
+            ]
+            for stuff in unwanted_stuff:
+                file_name = file_name.replace(stuff, "")
+            file_name = file_name.replace(".", " ")
+
+            season, episode = get_season_episode(file_name)
+            if not (season and episode):
+                click.secho(f'No Season/Episode found in "{file_name}"', fg="red")
+                continue
+
+            file_name = sanitize_name(file_name)
+            series = main_imdb(file_name)
+            if not series:
+                click.secho(f'Couldnt find imdb series for "{file_name}"', fg="yellow")
+                continue
+
+            file_name = find_most_apt(file_name, series)
+            file_name = removeIllegal(file_name).strip()
+            Final = f"SE{season}EP{episode} - {file_name}{extension}"
+
+            path_output = os.path.join(file_name, f"Season {season}")  # type: ignore
+
+            subprocess.check_call(f'mkdir -p "{path_output}"', cwd=path, shell=True)
+
+            try:
+                if click.confirm(f'Rename "{file}" to "{Final}"?', default=True):
+                    # cross device mv
+                    subprocess.check_call(
+                        f'mv "{file}" "{os.path.join(path_output, Final)}"',
+                        cwd=path,
+                        shell=True,
                     )
-                elif case == 2:
-                    path_new = cwd + "\\" + NAME
-                    path_new_1 = cwd + "\\" + NAME + "\\Season " + str(int(SEASON))
+            except FileExistsError:
+                print(f"Error - File Already Exist: {Final}")
 
-            """Naming Logic Ends here"""
-            # For Testing
-            def TEST():
-                print("\n\n")
-                print("NAME: " + NAME)
-                print("SEASON: " + SEASON)
-                print("EPISODE: " + EPISODE)
-                print("EXTN: " + extn)
-                # print("TEMP: " + temp)
-                print("REST: " + rest)
-                print("Final: " + Final)
-                print("PATH: " + path_new)
-                print("\n\n")
-
-            # TEST()    # Test Call
-            if CheckFlag == 1:
-                if case == 1:
-                    try:
-                        os.mkdir(cwd + "\\Output")
-                    except FileExistsError:
-                        pass
-                    try:
-                        os.mkdir(cwd + "\\Output\\Series")
-                    except FileExistsError:
-                        pass
-                try:
-                    os.mkdir(path_new)
-                except FileExistsError:
-                    pass
-                try:
-                    os.mkdir(path_new_1)
-                except FileExistsError:
-                    pass
-                try:
-                    os.rename(
-                        os.path.join(dirpath, file), os.path.join(path_new_1, Final)
-                    )
-                except FileExistsError:
-                    print(
-                        "Error - File Already Exist: "
-                        + NAME
-                        + "\\Season "
-                        + str(int(SEASON))
-                        + "\\"
-                        + Final
-                    )
-                    FileFlag = 1
-                    ErrorFlag = 1
-                    i = i - 1
-                i = i + 1
-        """Result Generation"""
-        print("All Files Processed...")
-        if FileFlag == 1:
-            print(
-                "Solution: Try again after removing the above file(s) from Output folder"
-            )
-        if i > 0 or ErrorFlag == 1:
-            print(str(i) + " File(s) Renamed and Organised Successfully")
-            # os.system("explorer.exe " + str(os.getcwd() + "\Output\\"))
-        else:
-            print("No Media File Found in Input Folder")
-
-
-# Prints usage/help
-def usageHelp():
-    print("\nUsage:\n  RENAME-Series.py [options] <commands (or) path>")
-    print("\nGeneral Options:")
-    print("  -h \tShow help.")
-    print("  -p \tTo orgainise TV Shows in the specified directory\n")
-    sys.exit(2)
-
-
-if __name__ == "__main__":
-    path = "NULL"
-    try:
-        opts, args = getopt.getopt(sys.argv[1:], "p:h", ["path="])
-    except getopt.GetoptError:
-        usageHelp()
-    for opt, arg in opts:
-        if opt in ("-p", "--path"):
-            path = arg
-        elif opt == "-h":
-            usageHelp()
-    init(path)
-    print("Moving files..")
-    print("Enter any key to exit...")
-    print()
+        click.echo("All Files Processed...")
