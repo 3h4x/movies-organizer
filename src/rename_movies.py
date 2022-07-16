@@ -1,11 +1,14 @@
 import os
+import click
+import ipdb
 import re
 from imdb import IMDb
 from similarity.damerau import Damerau
 
+damerau = Damerau()
+
 # Returns most closest Movie name
 def find_most_apt(name, movies):
-    damerau = Damerau()
     deg = []
     for movie in movies:
         if name.upper() == movie.upper():
@@ -93,25 +96,15 @@ def FormatStr(file_new_name):
     return rest.strip()
 
 
-def rename_movies():
-    try:
-        os.mkdir("Input")
-        os.mkdir(os.path.join("Input", "Movies"))
-        os.mkdir("Output")
-    except FileExistsError:
-        pass
-
-    path = os.path.join("Input", "Movies")
+def rename_movies(path, default):
     ErrorFlag = 0
     FileFlag = 0
-    import ipdb
 
     files = os.listdir(path)
     for file in files:
         file_new_name = file
         extn = file[(len(file) - 4) : len(file)]
         if file.endswith(".mp4") or file.endswith(".mkv") or file.endswith(".srt"):
-            print(f"Processing {file}")
             try:
                 url = Find(file_new_name)
                 file_new_name = file_new_name.replace(url, "")
@@ -123,29 +116,31 @@ def rename_movies():
             )
             file_new_name = file_new_name[0 : len(file_new_name) - 4]
             Final = file_new_name + year_str
-            print("Derived: ", Final)
             movies = main_imdb(file_new_name + year_str)
+            if not movies:
+                click.secho(f'No Match Found for "{file_new_name}"', bg="yellow")
+                continue
             file_new_name = find_most_apt(Final, movies)  # Sometimes causes error
             file_new_name = removeIllegal(Final)
             Final = file_new_name + extn
             print("Most Apt: ", Final)
             print()
-            # Rename from old -> new happens below
+
             path_new = os.path.join("Output", "Movies", file_new_name)
             try:
                 os.mkdir("Output")
-                os.mkdir("Output\\Movies")
+                os.mkdir(os.path.join("Output", "Movies"))
                 os.mkdir(path_new)
             except FileExistsError:
                 pass
             try:
-                ipdb.set_trace()
-                os.rename(os.path.join(path, file), os.path.join(path_new, Final))
+                if click.confirm(f'Rename "{file}" to "{Final}"?', default=default):
+                    os.rename(os.path.join(path, file), os.path.join(path_new, Final))
             except:
                 print("Error - File Already Exist: " + file_new_name)
                 FileFlag = 1
                 ErrorFlag = 1
-            # print(file)
+
     # Result Generation
     print("All Files Processed...")
     if FileFlag == 1:
