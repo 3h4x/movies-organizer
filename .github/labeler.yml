@@ -5,7 +5,7 @@ documentation:
   - "**/*.md"
 
 python:
-  - "**/.py"
+  - "**/*.py"
 
 tests:
   - "**/test*"
