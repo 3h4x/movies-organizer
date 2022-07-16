@@ -1,16 +1,16 @@
-# Movies Renamer
+# Movies Organizer
 
 <h1 align="center">
   <br>
-  <img src="http://cdn.thekrishna.in/img/common/mlo.png" alt="Movies Renamer" width="650">
+  <img src="http://cdn.thekrishna.in/img/common/mlo.png" alt="Movies Organizer" width="650">
   <br>
 </h1>
 
 <p align="center">
   <a href="https://www.python.org"><img src="https://img.shields.io/badge/language-python-blue.svg?style=flat"></a>
-  <a href="#"><img src="http://github-release-version.herokuapp.com/github/3h4x/movies-renamer/release.png[?style=flat]">
+  <a href="#"><img src="http://github-release-version.herokuapp.com/github/3h4x/movies-organizer/release.png[?style=flat]">
   <a href="#"><img src="https://img.shields.io/github/last-commit/KrishnaAlagiri/Media-Library-Organiser.svg"></a>
-  <a href="/LICENSE.md"><img src="https://img.shields.io/github/license/3h4x/movies-renamer.svg?color=blue"></a>
+  <a href="/LICENSE.md"><img src="https://img.shields.io/github/license/3h4x/movies-organizer.svg?color=blue"></a>
 </p>
 
 ## What it does
