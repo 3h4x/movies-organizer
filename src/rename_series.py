@@ -135,9 +135,9 @@ def rename_series(path):
                 if click.confirm(f'Rename "{file}" to "{Final}"?', default=True):
                     # cross device mv
                     subprocess.check_call(
-                        f"mv "{file}" "{os.path.join(path_output, Final)}",
+                        f'mv "{file}" "{os.path.join(path_output, Final)}"',
                         cwd=path,
-                        shell=True
+                        shell=True,
                     )
             except FileExistsError:
                 print(f"Error - File Already Exist: {Final}")
