@@ -1,7 +1,6 @@
 import os
 import re
 import click
-from torch import _fused_moving_avg_obs_fq_helper
 from imdb import IMDb
 from similarity.damerau import Damerau
 
@@ -72,8 +71,10 @@ def get_season_episode(file_name: str):
     return "", ""
 
 
-def FindName(file_name):
-        return file_name.replace("-", " ").replace(".", " ").strip()
+def sanitize_name(file_name):
+    file_name = re.sub(RE_X, "", file_name)
+    file_name = re.sub(RE_SE, "", file_name)
+    return file_name.replace("-", " ").replace(".", " ").strip()
 
 
 def FindDet(inputString):
@@ -138,24 +139,22 @@ def rename_series(path):
             for stuff in unwanted_stuff:
                 file_name = file_name.replace(stuff, "")
             file_name = file_name.replace(".", " ")
-            ipdb.set_trace()
 
             season, episode = get_season_episode(file_name)
             if not (season and episode):
                 click.secho(f'No Season/Episode found in "{file_name}"', fg="red")
                 continue
 
-            file_name = FindName(file_name)
-            Final = "S" + AddZero(FindSeason(file_name)) + "E" + EPISODE + extension
-
+            file_name = sanitize_name(file_name)
             series = main_imdb(file_name)
             file_name = find_most_apt(file_name, series)
             file_name = removeIllegal(file_name).strip()
-            Final = Final + extension
+            Final = f"SE{season}EP{episode} - {file_name}{extension}"
 
-            path_new_1 = os.path.join(file_name, f"Season {SEASON}")  # type: ignore
+            path_new_1 = os.path.join(file_name, f"Season {season}")  # type: ignore
 
             try:
+                os.mkdir(file_name)
                 os.mkdir(path_new_1)
             except FileExistsError:
                 pass
