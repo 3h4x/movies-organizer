@@ -14,13 +14,19 @@ def main(ctx):
 
 
 @main.command(help="Rename Movies")
-def movies():
-    rename_movies()
+@click.option("--path", "-p", help="Path", default=".")
+@click.option(
+    "--default", help="Should default answer for renaming be True",
+    default=True
+)
+def movies(path, default):
+    rename_movies(path, default)
 
 
 @main.command(help="Rename TV Series")
-def series():
-    click.echo("Hello there")
+@click.option("--path", "-p", help="Path", default=".")
+def series(path):
+    rename_series(path)
 
 
 if __name__ == "__main__":
