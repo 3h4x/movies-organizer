@@ -22,22 +22,13 @@ def find_most_apt(name, movies):
     return mostapt
 
 
-# Find any URLs present in FileName
-def Find(string):
+# find_url_in_string
+def find_url_in_string(file_name: str) -> str:
     url = re.findall(
-        "www.(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\)]|(?:%[0-9a-fA-F][0-9a-fA-F]))+", string
+        "www.(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\)]|(?:%[0-9a-fA-F][0-9a-fA-F]))+",
+        file_name,
     )
     return url[0]
-
-
-def lastIndexOf(str1, toFind):
-    index = len(str1) - 1
-    i = 0
-    for ch in str1:
-        if ch == toFind:
-            index = i
-        i += 1
-    return index
 
 
 # Returns a List Movie name and release year using imDB from Old_FileName
@@ -97,16 +88,13 @@ def FormatStr(file_new_name):
 
 
 def rename_movies(path, default):
-    ErrorFlag = 0
-    FileFlag = 0
-
     files = os.listdir(path)
     for file in files:
         file_new_name = file
         extn = file[(len(file) - 4) : len(file)]
         if file.endswith(".mp4") or file.endswith(".mkv") or file.endswith(".srt"):
             try:
-                url = Find(file_new_name)
+                url = find_url_in_string(file_new_name)
                 file_new_name = file_new_name.replace(url, "")
             except:
                 pass
@@ -119,12 +107,11 @@ def rename_movies(path, default):
             movies = main_imdb(file_new_name + year_str)
             if not movies:
                 click.secho(f'No Match Found for "{file_new_name}"', bg="yellow")
+                click.echo()
                 continue
             file_new_name = find_most_apt(Final, movies)  # Sometimes causes error
             file_new_name = removeIllegal(Final)
             Final = file_new_name + extn
-            print("Most Apt: ", Final)
-            print()
 
             path_new = os.path.join("Output", "Movies", file_new_name)
             try:
@@ -137,15 +124,8 @@ def rename_movies(path, default):
                 if click.confirm(f'Rename "{file}" to "{Final}"?', default=default):
                     os.rename(os.path.join(path, file), os.path.join(path_new, Final))
             except:
-                print("Error - File Already Exist: " + file_new_name)
-                FileFlag = 1
-                ErrorFlag = 1
+                click.secho("Error - File Already Exist: " + file_new_name, bg="red")
 
-    # Result Generation
-    print("All Files Processed...")
-    if FileFlag == 1:
-        print("Solution: Try again after removing the above file(s) from Output folder")
-    if ErrorFlag == 1:
-        print(" File(s) Renamed and Organised Successfully")
-    else:
-        print("No Media File Found in Input Folder")
+        click.echo()
+
+    click.echo("All Files Processed...")
