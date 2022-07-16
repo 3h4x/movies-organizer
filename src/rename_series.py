@@ -1,6 +1,7 @@
 import os
 import re
 import click
+from torch import _fused_moving_avg_obs_fq_helper
 from imdb import IMDb
 from similarity.damerau import Damerau
 
@@ -46,40 +47,33 @@ def removeIllegal(str):
     return str
 
 
-# has Condition #1
+RE_X = r"(\d)+\s+x\s+(\d+)"
+
+
 def hasX(inputString):
-    return bool(re.search(r"\dx\d", inputString) or re.search(r"\d x \d", inputString))
+    return bool(re.search(RE_X, inputString, re.IGNORECASE))
 
 
-# has Condition #2
+RE_SE = r"SE?(\d+)EP?(\d+)"
+
+
 def hasSE(inputString):
-    return bool(
-        re.search(r"S\d\dE\d\d", inputString)
-        or re.search(r"S\dE\d\d", inputString)
-        or re.search(r"s\d\de\d\d", inputString)
-        or re.search(r"s\de\d\d", inputString)
-    )
+    return bool(re.search(RE_SE, inputString, re.IGNORECASE))
 
 
-# has Condition #3
-def hasSEP(inputString):
-    return bool(
-        re.search(r"S\d\dEP\d\d", inputString)
-        or re.search(r"S\dEP\d\d", inputString)
-        or re.search(r"s\d\dep\d\d", inputString)
-        or re.search(r"s\dep\d\d", inputString)
-    )
+def get_season_episode(file_name: str):
+    if hasSE(file_name):
+        season, episode = re.search(RE_SE, file_name, re.IGNORECASE).groups()
+        return AddZero(season), AddZero(episode)
+    elif hasX(file_name):
+        season, episode = re.search(RE_X, file_name, re.IGNORECASE).groups()
+        return AddZero(season), AddZero(episode)
+
+    return "", ""
 
 
-def FindName(inputString):
-    inputString = inputString.replace(" x ", "x", 1)
-    filteredList = filter(None, re.split(r"(\dx\d)", inputString))
-    for element in filteredList:
-        Name = element
-        Name = Name.replace("-", " ")
-        Name = Name.replace(".", " ")
-        Name = Name.strip()
-        return str(Name)
+def FindName(file_name):
+        return file_name.replace("-", " ").replace(".", " ").strip()
 
 
 def FindDet(inputString):
@@ -117,85 +111,60 @@ def AddZero(inputString):
 def rename_series(path):
     print("Reading Files....")
 
+    import ipdb
+
     for (dirpath, _, _) in os.walk(path):
         files = os.listdir(dirpath)
         for file in files:
             _, file = os.path.split(file)
             file_name, extension = os.path.splitext(file)
 
-            # All possible media extensions go here
-            media_extensions = [".mp4", ".mkv", ".srt", ".avi", ".wmv"]
+            if extension not in [".mp4", ".mkv", ".srt", ".avi", ".wmv"]:
+                continue
 
-            if (file.endswith(ex1) for ex1 in media_extensions):
-                unwanted_stuff = [
-                    ".1080p",
-                    ".720p",
-                    "HDTV",
-                    "x264",
-                    "AAC",
-                    "E-Subs",
-                    "ESubs",
-                    "WEBRip",
-                    "WEB",
-                    "BluRay",
-                ]
-                for stuff in unwanted_stuff:
-                    file_name = file_name.replace(stuff, "")
-                file_name = file_name.replace(".", " ")
+            unwanted_stuff = [
+                ".1080p",
+                ".720p",
+                "HDTV",
+                "x264",
+                "AAC",
+                "E-Subs",
+                "ESubs",
+                "WEBRip",
+                "WEB",
+                "BluRay",
+                "Bluray",
+            ]
+            for stuff in unwanted_stuff:
+                file_name = file_name.replace(stuff, "")
+            file_name = file_name.replace(".", " ")
+            ipdb.set_trace()
 
-                # Specifically written for'x' type Files
-                if hasX(file):
-                    NAME = FindName(file_name)
-                    SEASON = FindSeason(file_name)
-                    EPISODE = AddZero(FindEpisode(file_name))
-                    Final = (
-                        "S" + AddZero(FindSeason(file_name)) + "E" + EPISODE + extension
-                    )
+            season, episode = get_season_episode(file_name)
+            if not (season and episode):
+                click.secho(f'No Season/Episode found in "{file_name}"', fg="red")
+                continue
 
-                # Specifically written for 'S__E__' type Files
-                elif hasSE(file):
-                    NAME = ""
-                    Final = ""
-                    for word in file_name.split(" "):
-                        if hasSE(word):
-                            Final = word
-                            break
-                        if hasSEP(word):
-                            Final = word
-                            break
-                        else:
-                            NAME = NAME + word + " "
-                    if not Final:
-                        click.secho(
-                            "Didnt find any Season or Episode in file name", fg="red"
-                        )
-                        continue
+            file_name = FindName(file_name)
+            Final = "S" + AddZero(FindSeason(file_name)) + "E" + EPISODE + extension
 
-                    series = main_imdb(NAME)
-                    NAME = find_most_apt(NAME, series)
-                    NAME = removeIllegal(NAME).strip()
-                    Final = Final.strip()
-                    SEASON = Final.split("E", 1)[0]
-                    EPISODE = Final.split("E", 1)[1]
-                    Final = Final + extension
+            series = main_imdb(file_name)
+            file_name = find_most_apt(file_name, series)
+            file_name = removeIllegal(file_name).strip()
+            Final = Final + extension
 
-                else:
-                    click.secho(
-                        "Didnt find any Season or Episode in file name", fg="red"
-                    )
-                    continue
+            path_new_1 = os.path.join(file_name, f"Season {SEASON}")  # type: ignore
 
-                path_new_1 = os.path.join(NAME, f"Season {SEASON}")  # type: ignore
-
-                try:
-                    os.mkdir(path_new_1)
-                except FileExistsError:
-                    pass
-                try:
+            try:
+                os.mkdir(path_new_1)
+            except FileExistsError:
+                pass
+            try:
+                if click.confirm(f'Rename "{file}" to "{Final}"?', default=True):
                     os.rename(
                         os.path.join(dirpath, file), os.path.join(path_new_1, Final)
                     )
-                except FileExistsError:
-                    print(f"Error - File Already Exist: {Final}")
+            except FileExistsError:
+                print(f"Error - File Already Exist: {Final}")
 
         click.echo("All Files Processed...")
