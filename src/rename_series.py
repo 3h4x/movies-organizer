@@ -1,13 +1,6 @@
-"""
-  Code Written by ~KK~
-  To Automate the boring process of renaming files for your TV Shows library
-  Useful for organising bulk media files or frequent updation of
-  your XBMC library (Like Kodi, Plex and OSMC)
-"""
 import os
 import re
-import getopt
-import sys
+import click
 from imdb import IMDb
 from similarity.damerau import Damerau
 
@@ -126,29 +119,7 @@ def split_line(text):
     return words
 
 
-# Before Driver
-def init(path="NULL"):
-    try:
-        os.mkdir(str(os.getcwd()) + "\\Input")
-    except:
-        pass
-    try:
-        os.mkdir(str(os.getcwd()) + "\\Input\\Series")
-    except:
-        pass
-    main(path)
-
-
-# Driver Code
-def rename_series(path="NULL"):
-    if path == "NULL":
-        cwd = str(os.getcwd())
-        path = cwd + "\\Input\\Series\\"
-        case = 1
-    else:
-        cwd = path
-        print(path)
-        case = 2
+def rename_series(path):
     path_new = path_new_1 = rest = Final = "NULL"
     NAME = ""
     Copy = ""
@@ -157,7 +128,7 @@ def rename_series(path="NULL"):
     FileFlag = 0
     print("Reading Files....")
     # main loop
-    for (dirpath, dirnames, filenames) in os.walk(path):
+    for (dirpath, _, _) in os.walk(path):
         files = os.listdir(dirpath)
         for file in files:
             CheckFlag = 0
@@ -303,29 +274,3 @@ def rename_series(path="NULL"):
             # os.system("explorer.exe " + str(os.getcwd() + "\Output\\"))
         else:
             print("No Media File Found in Input Folder")
-
-
-# Prints usage/help
-def usageHelp():
-    print("\nUsage:\n  RENAME-Series.py [options] <commands (or) path>")
-    print("\nGeneral Options:")
-    print("  -h \tShow help.")
-    print("  -p \tTo orgainise TV Shows in the specified directory\n")
-    sys.exit(2)
-
-
-if __name__ == "__main__":
-    path = "NULL"
-    try:
-        opts, args = getopt.getopt(sys.argv[1:], "p:h", ["path="])
-    except getopt.GetoptError:
-        usageHelp()
-    for opt, arg in opts:
-        if opt in ("-p", "--path"):
-            path = arg
-        elif opt == "-h":
-            usageHelp()
-    init(path)
-    print("Moving files..")
-    print("Enter any key to exit...")
-    print()
