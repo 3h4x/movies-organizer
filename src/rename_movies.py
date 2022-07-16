@@ -8,7 +8,7 @@ from similarity.damerau import Damerau
 damerau = Damerau()
 
 # Returns most closest Movie name
-def find_most_apt(name, movies):
+def get_movie_name(name, movies):
     deg = []
     for movie in movies:
         if name.upper() == movie.upper():
@@ -109,7 +109,7 @@ def rename_movies(path, default):
                 click.secho(f'No Match Found for "{file_new_name}"', bg="yellow")
                 click.echo()
                 continue
-            file_new_name = find_most_apt(Final, movies)  # Sometimes causes error
+            file_new_name = get_movie_name(Final, movies)  # Sometimes causes error
             file_new_name = removeIllegal(Final)
             Final = file_new_name + extn
 
