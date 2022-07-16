@@ -3,11 +3,11 @@
 #### Automatically bulk renames and organises your Movie and TV-Shows Library.<br>Ideal for maintaining your xbmc library.
 
 <div style="text-align: center">
-  ![GitHub top language](https://img.shields.io/github/languages/top/3h4x/movies-organizer)
-  ![GitHub release (latest by date)](https://img.shields.io/github/v/release/3h4x/movies-organizer)
-  ![GitHub last commit](https://img.shields.io/github/last-commit/3h4x/movies-organizer)
-  ![GitHub](https://img.shields.io/github/license/3h4x/movies-organizer)
-  ![GitHub Sponsors](https://img.shields.io/github/sponsors/3h4x)
+![GitHub top language](https://img.shields.io/github/languages/top/3h4x/movies-organizer)
+![GitHub release (latest by date)](https://img.shields.io/github/v/release/3h4x/movies-organizer)
+![GitHub last commit](https://img.shields.io/github/last-commit/3h4x/movies-organizer)
+![GitHub](https://img.shields.io/github/license/3h4x/movies-organizer)
+![GitHub Sponsors](https://img.shields.io/github/sponsors/3h4x)
 </div>
 
 ## What it does
