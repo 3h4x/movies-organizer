@@ -114,32 +114,19 @@ def AddZero(inputString):
     return inputString
 
 
-def split_line(text):
-    words = text.split()
-    return words
-
-
 def rename_series(path):
-    path_new = path_new_1 = rest = Final = "NULL"
-    NAME = ""
-    Copy = ""
-    i = 0
-    ErrorFlag = 0
-    FileFlag = 0
     print("Reading Files....")
-    # main loop
+
     for (dirpath, _, _) in os.walk(path):
         files = os.listdir(dirpath)
         for file in files:
-            CheckFlag = 0
-            temp = file
-            extn = file[(len(file) - 4) : len(file)]
-            """Logic Starts here"""
+            _, file = os.path.split(file)
+            file_name, extension = os.path.splitext(file)
+
             # All possible media extensions go here
             media_extensions = [".mp4", ".mkv", ".srt", ".avi", ".wmv"]
+
             if (file.endswith(ex1) for ex1 in media_extensions):
-                print(str(i) + " File(s) Processed....")
-                rest = temp.split(extn, 1)[0]
                 unwanted_stuff = [
                     ".1080p",
                     ".720p",
@@ -153,21 +140,23 @@ def rename_series(path):
                     "BluRay",
                 ]
                 for stuff in unwanted_stuff:
-                    rest = rest.replace(stuff, "")
-                rest = rest.replace(".", " ")
+                    file_name = file_name.replace(stuff, "")
+                file_name = file_name.replace(".", " ")
+
                 # Specifically written for'x' type Files
                 if hasX(file):
-                    CheckFlag = 1
-                    NAME = FindName(rest)
-                    SEASON = FindSeason(rest)
-                    EPISODE = AddZero(FindEpisode(rest))
-                    Final = "S" + AddZero(FindSeason(rest)) + "E" + EPISODE + extn
+                    NAME = FindName(file_name)
+                    SEASON = FindSeason(file_name)
+                    EPISODE = AddZero(FindEpisode(file_name))
+                    Final = (
+                        "S" + AddZero(FindSeason(file_name)) + "E" + EPISODE + extension
+                    )
 
                 # Specifically written for 'S__E__' type Files
                 elif hasSE(file):
                     NAME = ""
-                    words = split_line(rest)
-                    for word in words:
+                    Final = ""
+                    for word in file_name.split(" "):
                         if hasSE(word):
                             Final = word
                             break
@@ -176,72 +165,28 @@ def rename_series(path):
                             break
                         else:
                             NAME = NAME + word + " "
-                    brackets_ = re.findall("[(]+(.*?)[)]", NAME)
-                    # print(brackets_)
-                    for yy in brackets_:
-                        try:
-                            NAME = NAME.replace(yy, "")
-                        except:
-                            pass
-                    if NAME != Copy:
-                        Copy = NAME
-                        series = main_imdb(NAME)
-                        NAME = find_most_apt(NAME, series)
-                        NAME = removeIllegal(NAME)
-                        NAME = NAME.strip()
-                        Restore = NAME
-                    else:
-                        NAME = Restore
-                    TEMP = Final = Final.strip()
-                    TEMP = TEMP.replace("S", "")
-                    SEASON = TEMP.split("E", 1)[0]
-                    EPISODE = TEMP.split("E", 1)[1]
-                    Final = Final + extn
-                    CheckFlag = 1
+                    if not Final:
+                        click.secho(
+                            "Didnt find any Season or Episode in file name", fg="red"
+                        )
+                        continue
 
-            if CheckFlag == 1:
-                if case == 1:
-                    path_new = cwd + "\\Output\\Series\\" + NAME
-                    path_new_1 = (
-                        cwd
-                        + "\\Output\\Series\\"
-                        + NAME
-                        + "\\Season "
-                        + str(int(SEASON))
+                    series = main_imdb(NAME)
+                    NAME = find_most_apt(NAME, series)
+                    NAME = removeIllegal(NAME).strip()
+                    Final = Final.strip()
+                    SEASON = Final.split("E", 1)[0]
+                    EPISODE = Final.split("E", 1)[1]
+                    Final = Final + extension
+
+                else:
+                    click.secho(
+                        "Didnt find any Season or Episode in file name", fg="red"
                     )
-                elif case == 2:
-                    path_new = cwd + "\\" + NAME
-                    path_new_1 = cwd + "\\" + NAME + "\\Season " + str(int(SEASON))
+                    continue
 
-            """Naming Logic Ends here"""
-            # For Testing
-            def TEST():
-                print("\n\n")
-                print("NAME: " + NAME)
-                print("SEASON: " + SEASON)
-                print("EPISODE: " + EPISODE)
-                print("EXTN: " + extn)
-                # print("TEMP: " + temp)
-                print("REST: " + rest)
-                print("Final: " + Final)
-                print("PATH: " + path_new)
-                print("\n\n")
+                path_new_1 = os.path.join(NAME, f"Season {SEASON}")  # type: ignore
 
-            # TEST()    # Test Call
-            if CheckFlag == 1:
-                if case == 1:
-                    try:
-                        os.mkdir(cwd + "\\Output")
-                    except FileExistsError:
-                        pass
-                    try:
-                        os.mkdir(cwd + "\\Output\\Series")
-                    except FileExistsError:
-                        pass
-                try:
-                    os.mkdir(path_new)
-                except FileExistsError:
-                    pass
                 try:
                     os.mkdir(path_new_1)
                 except FileExistsError:
@@ -251,26 +196,6 @@ def rename_series(path):
                         os.path.join(dirpath, file), os.path.join(path_new_1, Final)
                     )
                 except FileExistsError:
-                    print(
-                        "Error - File Already Exist: "
-                        + NAME
-                        + "\\Season "
-                        + str(int(SEASON))
-                        + "\\"
-                        + Final
-                    )
-                    FileFlag = 1
-                    ErrorFlag = 1
-                    i = i - 1
-                i = i + 1
-        """Result Generation"""
-        print("All Files Processed...")
-        if FileFlag == 1:
-            print(
-                "Solution: Try again after removing the above file(s) from Output folder"
-            )
-        if i > 0 or ErrorFlag == 1:
-            print(str(i) + " File(s) Renamed and Organised Successfully")
-            # os.system("explorer.exe " + str(os.getcwd() + "\Output\\"))
-        else:
-            print("No Media File Found in Input Folder")
+                    print(f"Error - File Already Exist: {Final}")
+
+        click.echo("All Files Processed...")
