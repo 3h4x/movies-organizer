@@ -120,17 +120,18 @@ def rename_series(path):
 
             file_name = sanitize_name(file_name)
             series = main_imdb(file_name)
+            if not series:
+                click.secho(f'Couldnt find imdb series for "{file_name}"', fg="yellow")
+                continue
+
             file_name = find_most_apt(file_name, series)
             file_name = removeIllegal(file_name).strip()
             Final = f"SE{season}EP{episode} - {file_name}{extension}"
 
             path_output = os.path.join(file_name, f"Season {season}")  # type: ignore
 
-            try:
-                os.mkdir(file_name)
-                os.mkdir(path_output)
-            except FileExistsError:
-                pass
+            subprocess.check_call(f'mkdir -p "{path_output}"', cwd=path, shell=True)
+
             try:
                 if click.confirm(f'Rename "{file}" to "{Final}"?', default=True):
                     # cross device mv
