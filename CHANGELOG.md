@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/3h4x/movies-organizer/compare/v1.0.0...v1.1.0) (2022-07-17)
+
+
+### Features
+
+* add automerge ([805d267](https://github.com/3h4x/movies-organizer/commit/805d26797ff1d836c44457b7e16248d8d1b3cc14))
+
 ## [1.0.0](https://github.com/3h4x/movies-organizer/compare/v0.1.3...v1.0.0) (2022-07-17)
 
 
