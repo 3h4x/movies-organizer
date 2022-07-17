@@ -1,4 +1,5 @@
 {
+  "release-as": "0.1.4",
   "packages": {
     ".": {
       "releaseType": "python",
