@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/3h4x/movies-organizer/compare/v1.2.0...v2.0.0) (2022-07-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove unused files
+
+### Features
+
+* remove unused files ([63a026b](https://github.com/3h4x/movies-organizer/commit/63a026b9433ac5ffc8411025990000b8dc428778))
+
 ## [1.2.0](https://github.com/3h4x/movies-organizer/compare/v1.1.0...v1.2.0) (2022-07-17)
 
 
