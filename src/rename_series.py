@@ -85,7 +85,7 @@ def AddZero(inputString):
 
 
 def rename_series(path):
-    print("Reading Files....")
+    click.echo("Reading Files....")
 
     for (dirpath, _, _) in os.walk(path):
         files = os.listdir(dirpath)
