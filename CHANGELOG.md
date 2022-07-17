@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.1.1](https://github.com/3h4x/movies-organizer/compare/v2.1.0...v2.1.1) (2022-07-17)
+
+
+### Bug Fixes
+
+* improve series detection ([8747c47](https://github.com/3h4x/movies-organizer/commit/8747c476090d3be89a69ce7325ed6e11ce0a416a))
+
+
+### Documentation
+
+* improve readme ([a6aa7ec](https://github.com/3h4x/movies-organizer/commit/a6aa7ecb97b97f91b6ea5059d9db606d41deb679))
+
 ## [2.1.0](https://github.com/3h4x/movies-organizer/compare/v2.0.0...v2.1.0) (2022-07-17)
 
 
