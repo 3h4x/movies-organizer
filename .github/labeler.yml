@@ -9,3 +9,7 @@ python:
 
 tests:
   - "**/test*"
+
+automerge:
+  - "CHANGELOG.md"
+  - ".release-please-manifest"
