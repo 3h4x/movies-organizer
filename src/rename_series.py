@@ -84,63 +84,65 @@ def AddZero(inputString):
     return inputString
 
 
-def rename_series(path):
+def rename_series(path, force):
     click.echo("Reading Files....")
 
-    for (dirpath, _, _) in os.walk(path):
-        files = os.listdir(dirpath)
-        for file in files:
-            _, file = os.path.split(file)
-            file_name, extension = os.path.splitext(file)
+    files = os.listdir(path)
+    for file in files:
+        _, file = os.path.split(file)
+        file_name, extension = os.path.splitext(file)
 
-            if extension not in [".mp4", ".mkv", ".srt", ".avi", ".wmv"]:
-                continue
+        if extension not in [".mp4", ".mkv", ".srt", ".avi", ".wmv"]:
+            continue
 
-            unwanted_stuff = [
-                ".1080p",
-                ".720p",
-                "HDTV",
-                "x264",
-                "AAC",
-                "E-Subs",
-                "ESubs",
-                "WEBRip",
-                "WEB",
-                "BluRay",
-                "Bluray",
-            ]
-            for stuff in unwanted_stuff:
-                file_name = file_name.replace(stuff, "")
-            file_name = file_name.replace(".", " ")
+        unwanted_stuff = [
+            ".1080p",
+            ".720p",
+            "HDTV",
+            "x264",
+            "AAC",
+            "E-Subs",
+            "ESubs",
+            "WEBRip",
+            "WEB",
+            "BluRay",
+            "Bluray",
+        ]
+        for stuff in unwanted_stuff:
+            file_name = file_name.replace(stuff, "")
+        file_name = file_name.replace(".", " ")
 
-            season, episode = get_season_episode(file_name)
-            if not (season and episode):
-                click.secho(f'No Season/Episode found in "{file_name}"', fg="red")
-                continue
+        season, episode = get_season_episode(file_name)
+        if not (season and episode):
+            click.secho(f'No Season/Episode found in "{file_name}"', fg="red")
+            continue
 
-            file_name = sanitize_name(file_name)
-            series = main_imdb(file_name)
-            if not series:
-                click.secho(f'Couldnt find imdb series for "{file_name}"', fg="yellow")
-                continue
+        file_name = sanitize_name(file_name)
+        import ipdb
 
-            file_name = find_most_apt(file_name, series)
-            file_name = removeIllegal(file_name).strip()
-            Final = f"SE{season}EP{episode} - {file_name}{extension}"
+        ipdb.set_trace()
+        series = main_imdb(file_name)
+        if not series:
+            click.secho(f'Couldnt find imdb series for "{file_name}"', fg="yellow")
+            continue
 
-            path_output = os.path.join(file_name, f"Season {season}")  # type: ignore
+        file_name = find_most_apt(file_name, series)
+        file_name = removeIllegal(file_name).strip()
+        Final = f"SE{season}EP{episode} - {file_name}{extension}"
 
-            subprocess.check_call(f'mkdir -p "{path_output}"', cwd=path, shell=True)
+        path_output = os.path.join(file_name, f"Season {season}")  # type: ignore
 
-            try:
-                if click.confirm(f'Rename "{file}" to "{Final}"?', default=True):
-                    # cross device mv
-                    subprocess.check_call(
-                        f'mv "{file}" "{os.path.join(path_output, Final)}"',
-                        cwd=path,
-                        shell=True,
-                    )
-            except FileExistsError:
-                print(f"Error - File Already Exist: {Final}")
+        subprocess.check_call(f'mkdir -p "{path_output}"', cwd=path, shell=True)
+
+        try:
+            if force or click.confirm(f'Rename "{file}" to "{Final}"?', default=True):
+                # cross device mv
+                subprocess.check_call(
+                    f'mv "{file}" "{os.path.join(path_output, Final)}"',
+                    cwd=path,
+                    shell=True,
+                )
+        except FileExistsError:
+            print(f"Error - File Already Exist: {Final}")
 
         click.echo("All Files Processed...")
