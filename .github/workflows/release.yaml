@@ -16,21 +16,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Conventional Changelog Release
-        uses: TriPSs/conventional-changelog-action@v3
-        id: changelog
+      - uses: google-github-actions/release-please-action@v3
         with:
-          github-token: ${{ secrets.github_token }}
-          skip-version-file: true
-          skip-on-empty: false
-
-
-      - name: Create Release
-        uses: actions/create-release@v1
-        if: ${{ steps.changelog.outputs.skipped == 'false' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.github_token }}
-        with:
-          tag_name: ${{ steps.changelog.outputs.tag }}
-          release_name: ${{ steps.changelog.outputs.tag }}
-          body: ${{ steps.changelog.outputs.clean_changelog }}
+          release-type: python
