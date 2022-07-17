@@ -2,7 +2,6 @@ import os
 import re
 import subprocess
 import click
-from imdb import IMDb
 from similarity.damerau import Damerau
 
 
@@ -21,14 +20,12 @@ def find_most_apt(name, series):
 
 
 # Retrieves name from imDB
-def main_imdb(str21):
-    ia = IMDb()
-    s_result = ia.search_movie(str21)
+def get_imdb_title(imdb_client, name, season, episode):
+    results = imdb_client.search_movie(name)
     series = []
-    for ss in s_result:
-        if ss["kind"] == "tv series":
-            str2 = ss["title"]
-            series.append(str2)
+    for result in results:
+        if result["kind"] == "tv series":
+            series.append(result["title"])
     return series
 
 
@@ -47,48 +44,46 @@ def removeIllegal(str):
     return str
 
 
-RE_X = r"(\d)+\s+x\s+(\d+)"
+RE_X = re.compile("(\d)+\s+x\s+(\d+)", re.IGNORECASE)
+RE_SE = re.compile("SE?(\d+)EP?(\d+)", re.IGNORECASE)
+RE_E = re.compile("EP?(\d+)", re.IGNORECASE)
 
-
-def hasX(inputString):
-    return bool(re.search(RE_X, inputString, re.IGNORECASE))
-
-
-RE_SE = r"SE?(\d+)EP?(\d+)"
-
-
-def hasSE(inputString):
-    return bool(re.search(RE_SE, inputString, re.IGNORECASE))
+RE_XA = re.compile("(\d)+\s+x\s+(\d+).*", re.IGNORECASE)
+RE_SEA = re.compile("SE?(\d+)EP?(\d+).*", re.IGNORECASE)
+RE_EA = re.compile("EP?(\d+).*", re.IGNORECASE)
 
 
 def get_season_episode(file_name: str):
-    if hasSE(file_name):
-        season, episode = re.search(RE_SE, file_name, re.IGNORECASE).groups()
+    if re.search(RE_SE, file_name):
+        season, episode = re.search(RE_SE, file_name).groups()
         return AddZero(season), AddZero(episode)
-    elif hasX(file_name):
-        season, episode = re.search(RE_X, file_name, re.IGNORECASE).groups()
+    elif re.search(RE_X, file_name):
+        season, episode = re.search(RE_X, file_name).groups()
         return AddZero(season), AddZero(episode)
+    elif re.search(RE_E, file_name):
+        episode = re.search(RE_E, file_name).groups()[0]
+        return AddZero(1), AddZero(episode)
 
     return "", ""
 
 
 def sanitize_name(file_name):
-    file_name = re.sub(RE_X, "", file_name)
-    file_name = re.sub(RE_SE, "", file_name)
+    file_name = re.sub(RE_XA, "", file_name)
+    file_name = re.sub(RE_SEA, "", file_name)
+    file_name = re.sub(RE_EA, "", file_name)
     return file_name.replace("-", " ").replace(".", " ").strip()
 
 
-def AddZero(inputString):
-    if int(inputString) < 10:
-        return str("0" + str(int(inputString)))
-    return inputString
+def AddZero(input):
+    if int(input) < 10:
+        return str("0" + str(int(input)))
+    return input
 
 
-def rename_series(path, force):
+def rename_series(ctx, path, force):
     click.echo("Reading Files....")
 
-    files = os.listdir(path)
-    for file in files:
+    for file in sorted(os.listdir(path)):
         _, file = os.path.split(file)
         file_name, extension = os.path.splitext(file)
 
@@ -118,10 +113,7 @@ def rename_series(path, force):
             continue
 
         file_name = sanitize_name(file_name)
-        import ipdb
-
-        ipdb.set_trace()
-        series = main_imdb(file_name)
+        series = get_imdb_title(ctx.obj["imdb_client"], file_name, season, episode)
         if not series:
             click.secho(f'Couldnt find imdb series for "{file_name}"', fg="yellow")
             continue
@@ -145,4 +137,4 @@ def rename_series(path, force):
         except FileExistsError:
             print(f"Error - File Already Exist: {Final}")
 
-        click.echo("All Files Processed...")
+    click.echo("All Files Processed...")

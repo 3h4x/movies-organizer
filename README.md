@@ -60,7 +60,7 @@ What things you need to run the program:
 
 <p align="center">
   Made with ❤️ by <a href="https://github.com/3h4x">3h4x</a></br>
-  Loosely based on work of <a href="https://github.com/bearlike">bearlike</a>
+  Loosely based on work of <a href="https://github.com/bearlike/Media-Library-Organiser">bearlike</a>
 </p>
 
 ![wave](http://cdn.thekrishna.in/img/common/border.png)

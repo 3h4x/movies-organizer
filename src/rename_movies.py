@@ -2,7 +2,6 @@ import os
 import click
 import ipdb
 import re
-from imdb import IMDb
 from similarity.damerau import Damerau
 
 damerau = Damerau()
@@ -32,9 +31,8 @@ def find_url_in_string(file_name: str) -> str:
 
 
 # Returns a List Movie name and release year using imDB from Old_FileName
-def main_imdb(str21):
-    ia = IMDb()
-    s_result = ia.search_movie(str21)
+def get_imdb_title(imdb_client, name):
+    s_result = imdb_client.search_movie(name)
     movies = []
     for movie in s_result:
         if movie["kind"] == "movie":
@@ -87,7 +85,7 @@ def FormatStr(file_new_name):
     return rest.strip()
 
 
-def rename_movies(path, default):
+def rename_movies(ctx, path, default):
     files = os.listdir(path)
     for file in files:
         file_new_name = file
@@ -104,7 +102,7 @@ def rename_movies(path, default):
             )
             file_new_name = file_new_name[0 : len(file_new_name) - 4]
             Final = file_new_name + year_str
-            movies = main_imdb(file_new_name + year_str)
+            movies = get_imdb_title(ctx.obj["imdb_client"], file_new_name + year_str)
             if not movies:
                 click.secho(f'No Match Found for "{file_new_name}"', bg="yellow")
                 click.echo()
