@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/3h4x/movies-organizer/compare/v1.1.0...v1.2.0) (2022-07-17)
+
+
+### Features
+
+* trigger workflow in another PR ([3f42214](https://github.com/3h4x/movies-organizer/commit/3f422142d64499fb25e9daa83e2beaa82ad79e2e))
+
 ## [1.1.0](https://github.com/3h4x/movies-organizer/compare/v1.0.0...v1.1.0) (2022-07-17)
 
 
