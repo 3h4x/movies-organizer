@@ -10,14 +10,33 @@
 
 ## What it does
 
-## Getting Started
+Running `./organizer.py` will show possible commands and flags:
+```
+Usage: organizer.py [OPTIONS] COMMAND [ARGS]...
 
-### Prerequisites
-What things you need to run the program:
-- At least Python 3.8
-- Install requirements `pip install -r requirements.txt`
+  Rename Media Files
 
-### Features
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  movies  Rename Movies
+  series  Rename TV Series
+```
+Currently renaming movies and series is supported.
+
+Help for series:
+```
+Usage: organizer.py series [OPTIONS]
+
+  Rename TV Series
+
+Options:
+  -p, --path TEXT  Path
+  -f, --force      Automatically rename
+  --help           Show this message and exit.
+```
+
 -  Movies are renamed and organized in format:
 ```
 <Movie_name> (<year>)/<Movie_name> (<year>)
@@ -28,13 +47,20 @@ What things you need to run the program:
 <TV_Series_name>/S<Season_number>/S<Season_number>E<Episode_Number>
 ```
 
+## Getting Started
+
+### Prerequisites
+What things you need to run the program:
+- At least Python 3.8
+- Install requirements `pip install -r requirements.txt`
+
 ### Development
 
 - `pre-commit install --hook-type commit-msg`
 
 <p align="center">
-  Made with ❤️ by <a href="https://github.com/3h4x">3h4x</a>
-  Based on work of <a href="https://github.com/bearlike">bearlike</a>
+  Made with ❤️ by <a href="https://github.com/3h4x">3h4x</a></br>
+  Loosely based on work of <a href="https://github.com/bearlike/Media-Library-Organiser">bearlike</a>
 </p>
 
 ![wave](http://cdn.thekrishna.in/img/common/border.png)
