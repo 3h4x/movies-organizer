@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.1.0](https://github.com/3h4x/movies-organizer/compare/v2.0.0...v2.1.0) (2022-07-17)
+
+
+### Features
+
+* automerge needs to trigger GHA ([8616f36](https://github.com/3h4x/movies-organizer/commit/8616f3618665f43dc39c72d68bb316da06ed640c))
+
 ## [2.0.0](https://github.com/3h4x/movies-organizer/compare/v1.2.0...v2.0.0) (2022-07-17)
 
 
