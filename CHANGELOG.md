@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/3h4x/movies-organizer/compare/v2.1.1...v2.2.0) (2022-07-21)
+
+
+### Features
+
+* strip extra zero from directory of seasons ([f0a218e](https://github.com/3h4x/movies-organizer/commit/f0a218ec79b2bba1db0a52ae10a14d161f884716))
+
 ## [2.1.1](https://github.com/3h4x/movies-organizer/compare/v2.1.0...v2.1.1) (2022-07-17)
 
 
