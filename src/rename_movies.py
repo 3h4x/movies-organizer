@@ -89,31 +89,38 @@ def FormatStr(file_new_name):
 def rename_movies(ctx, path, force):
     files = os.listdir(path)
     for file in files:
-        file_new_name = file
         file_name, extension = os.path.splitext(file)
         if not is_video(extension):
             continue
 
         try:
-            url = find_url_in_string(file_new_name)
-            file_new_name = file_new_name.replace(url, "")
+            url = find_url_in_string(file_name)
+            file_name = file_name.replace(url, "")
         except:
             pass
-        file_new_name = FormatStr(file_new_name.strip())
-        year_str = (
-            "(" + file_new_name[len(file_new_name) - 4 : len(file_new_name)] + ")"
-        )
-        file_new_name = file_new_name[0 : len(file_new_name) - 4]
-        output_file = file_new_name + year_str
-        movies = get_imdb_title(ctx.obj["imdb_client"], file_new_name + year_str)
+
+        file_name = FormatStr(file_name.strip())
+
+        # See if you can find a year substring
+        if re.search("(.*)((19|20)\d{2})(.*)", file_name):
+            yearNumber = re.search(
+                "(.*)((19|20)\d{2})(.*)", file_name
+            )  # name the year substring as "yearnumber"
+            movieTitle = yearNumber.group(1)
+            movieTitle = movieTitle.strip()
+            movieYear = yearNumber.group(2)
+            movieYear = "(" + movieYear + ")"
+            file_name = movieTitle + " " + movieYear  # count 1 more movie with year
+
+        movies = get_imdb_title(ctx.obj["imdb_client"], file_name)
         if not movies:
-            click.secho(f'No Match Found for "{file_new_name}"', bg="yellow")
+            click.secho(f'No Match Found for "{file_name}"', bg="yellow")
             click.echo()
             continue
-        file_new_name = get_movie_name(output_file, movies)  # Sometimes causes error
-        file_new_name = removeIllegal(output_file)
-        output_file = file_new_name + extension
-        output_path = os.path.join("Output", "Movies", file_new_name)
+        file_name = get_movie_name(file_name, movies)  # Sometimes causes error
+        file_name = removeIllegal(file_name)
+        output_file = file_name + extension
+        output_path = os.path.join(file_name)
 
         rename_file(path, file, output_path, output_file, force=False)
 
