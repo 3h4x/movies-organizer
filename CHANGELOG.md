@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.0](https://github.com/3h4x/movies-organizer/compare/v2.3.0...v2.4.0) (2022-07-21)
+
+
+### Features
+
+* detect episodes without season or EP prefix ([e294650](https://github.com/3h4x/movies-organizer/commit/e294650636eac7f1670eb790124ffc8cca3bdae4))
+
 ## [2.3.0](https://github.com/3h4x/movies-organizer/compare/v2.2.0...v2.3.0) (2022-07-21)
 
 
