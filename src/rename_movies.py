@@ -2,6 +2,7 @@ import os
 import click
 import ipdb
 import re
+from helpers import is_video, rename_file
 from similarity.damerau import Damerau
 
 damerau = Damerau()
@@ -85,44 +86,36 @@ def FormatStr(file_new_name):
     return rest.strip()
 
 
-def rename_movies(ctx, path, default):
+def rename_movies(ctx, path, force):
     files = os.listdir(path)
     for file in files:
         file_new_name = file
-        extn = file[(len(file) - 4) : len(file)]
-        if file.endswith(".mp4") or file.endswith(".mkv") or file.endswith(".srt"):
-            try:
-                url = find_url_in_string(file_new_name)
-                file_new_name = file_new_name.replace(url, "")
-            except:
-                pass
-            file_new_name = FormatStr(file_new_name.strip())
-            year_str = (
-                "(" + file_new_name[len(file_new_name) - 4 : len(file_new_name)] + ")"
-            )
-            file_new_name = file_new_name[0 : len(file_new_name) - 4]
-            Final = file_new_name + year_str
-            movies = get_imdb_title(ctx.obj["imdb_client"], file_new_name + year_str)
-            if not movies:
-                click.secho(f'No Match Found for "{file_new_name}"', bg="yellow")
-                click.echo()
-                continue
-            file_new_name = get_movie_name(Final, movies)  # Sometimes causes error
-            file_new_name = removeIllegal(Final)
-            Final = file_new_name + extn
+        file_name, extension = os.path.splitext(file)
+        if not is_video(extension):
+            continue
 
-            path_new = os.path.join("Output", "Movies", file_new_name)
-            try:
-                os.mkdir("Output")
-                os.mkdir(os.path.join("Output", "Movies"))
-                os.mkdir(path_new)
-            except FileExistsError:
-                pass
-            try:
-                if click.confirm(f'Rename "{file}" to "{Final}"?', default=default):
-                    os.rename(os.path.join(path, file), os.path.join(path_new, Final))
-            except:
-                click.secho("Error - File Already Exist: " + file_new_name, bg="red")
+        try:
+            url = find_url_in_string(file_new_name)
+            file_new_name = file_new_name.replace(url, "")
+        except:
+            pass
+        file_new_name = FormatStr(file_new_name.strip())
+        year_str = (
+            "(" + file_new_name[len(file_new_name) - 4 : len(file_new_name)] + ")"
+        )
+        file_new_name = file_new_name[0 : len(file_new_name) - 4]
+        output_file = file_new_name + year_str
+        movies = get_imdb_title(ctx.obj["imdb_client"], file_new_name + year_str)
+        if not movies:
+            click.secho(f'No Match Found for "{file_new_name}"', bg="yellow")
+            click.echo()
+            continue
+        file_new_name = get_movie_name(output_file, movies)  # Sometimes causes error
+        file_new_name = removeIllegal(output_file)
+        output_file = file_new_name + extension
+        output_path = os.path.join("Output", "Movies", file_new_name)
+
+        rename_file(path, file, output_path, output_file, force=False)
 
         click.echo()
 
