@@ -46,11 +46,11 @@ def removeIllegal(str):
 
 RE_X = re.compile("(\d)+\s+x\s+(\d+)", re.IGNORECASE)
 RE_SE = re.compile("SE?(\d+)EP?(\d+)", re.IGNORECASE)
-RE_E = re.compile("EP?(\d+)", re.IGNORECASE)
+RE_E = re.compile("E?P?(\d+)", re.IGNORECASE)
 
 RE_XA = re.compile("(\d)+\s+x\s+(\d+).*", re.IGNORECASE)
 RE_SEA = re.compile("SE?(\d+)EP?(\d+).*", re.IGNORECASE)
-RE_EA = re.compile("EP?(\d+).*", re.IGNORECASE)
+RE_EA = re.compile("E?P?(\d+).*", re.IGNORECASE)
 
 
 def get_season_episode(file_name: str):
@@ -87,9 +87,10 @@ def rename_series(ctx, path, force):
         _, file = os.path.split(file)
         file_name, extension = os.path.splitext(file)
 
-        if extension not in [".mp4", ".mkv", ".srt", ".avi", ".wmv"]:
+        if not is_video(extension):
             continue
 
+        # TODO: make it case insensitive with regex
         unwanted_stuff = [
             ".1080p",
             ".720p",
@@ -122,19 +123,27 @@ def rename_series(ctx, path, force):
         file_name = removeIllegal(file_name).strip()
         output_name = f"{file_name} S{season}E{episode}{extension}"
 
-        path_output = os.path.join(file_name, f"Season {int(season)}")  # type: ignore
+        rename_file(path, force, file, file_name, season, output_name)
 
-        subprocess.check_call(f'mkdir -p "{path_output}"', cwd=path, shell=True)
+    click.echo("All Files Processed...")
 
-        try:
-            if force or click.confirm(f'Rename "{file}" to "{output_name}"?', default=True):
+
+def is_video(extension):
+    return extension in [".mp4", ".mkv", ".srt", ".avi", ".wmv"]
+
+
+def rename_file(path, force, file, file_name, season, output_name):
+    path_output = os.path.join(file_name, f"Season {int(season)}")  # type: ignore
+
+    subprocess.check_call(f'mkdir -p "{path_output}"', cwd=path, shell=True)
+
+    try:
+        if force or click.confirm(f'Rename "{file}" to "{output_name}"?', default=True):
                 # cross device mv
-                subprocess.check_call(
+            subprocess.check_call(
                     f'mv "{file}" "{os.path.join(path_output, output_name)}"',
                     cwd=path,
                     shell=True,
                 )
-        except FileExistsError:
-            print(f"Error - File Already Exist: {output_name}")
-
-    click.echo("All Files Processed...")
+    except FileExistsError:
+        print(f"Error - File Already Exist: {output_name}")

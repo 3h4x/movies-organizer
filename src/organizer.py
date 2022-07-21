@@ -28,7 +28,7 @@ def movies(ctx, path, default):
 @main.command(help="Rename TV Series")
 @click.pass_context
 @click.option("--path", "-p", help="Path", default=".")
-@click.option("--force", "-f", help="Automatically rename", is_flag=True, default=False)
+@click.option("--force", "-f", "-y", help="Automatically rename", is_flag=True, default=False)
 def series(ctx, path, force):
     rename_series(ctx, path, force)
 
