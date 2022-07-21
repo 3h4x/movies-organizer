@@ -122,7 +122,7 @@ def rename_series(ctx, path, force):
         file_name = removeIllegal(file_name).strip()
         Final = f"SE{season}EP{episode} - {file_name}{extension}"
 
-        path_output = os.path.join(file_name, f"Season {season}")  # type: ignore
+        path_output = os.path.join(file_name, f"Season {int(season)}")  # type: ignore
 
         subprocess.check_call(f'mkdir -p "{path_output}"', cwd=path, shell=True)
 
