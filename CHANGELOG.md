@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/3h4x/movies-organizer/compare/v2.2.0...v2.3.0) (2022-07-21)
+
+
+### Features
+
+* improve series naming ([961f48b](https://github.com/3h4x/movies-organizer/commit/961f48b8593999c74fd76b7d4cbb3c6b70e1d838))
+
 ## [2.2.0](https://github.com/3h4x/movies-organizer/compare/v2.1.1...v2.2.0) (2022-07-21)
 
 
