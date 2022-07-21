@@ -120,21 +120,21 @@ def rename_series(ctx, path, force):
 
         file_name = find_most_apt(file_name, series)
         file_name = removeIllegal(file_name).strip()
-        Final = f"SE{season}EP{episode} - {file_name}{extension}"
+        output_name = f"{file_name} S{season}E{episode}{extension}"
 
         path_output = os.path.join(file_name, f"Season {int(season)}")  # type: ignore
 
         subprocess.check_call(f'mkdir -p "{path_output}"', cwd=path, shell=True)
 
         try:
-            if force or click.confirm(f'Rename "{file}" to "{Final}"?', default=True):
+            if force or click.confirm(f'Rename "{file}" to "{output_name}"?', default=True):
                 # cross device mv
                 subprocess.check_call(
-                    f'mv "{file}" "{os.path.join(path_output, Final)}"',
+                    f'mv "{file}" "{os.path.join(path_output, output_name)}"',
                     cwd=path,
                     shell=True,
                 )
         except FileExistsError:
-            print(f"Error - File Already Exist: {Final}")
+            print(f"Error - File Already Exist: {output_name}")
 
     click.echo("All Files Processed...")
