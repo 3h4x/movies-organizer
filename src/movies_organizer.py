@@ -18,11 +18,9 @@ def main(ctx):
 @main.command(help="Rename Movies")
 @click.pass_context
 @click.option("--path", "-p", help="Path", default=".")
-@click.option(
-    "--default", help="Should default answer for renaming be True", default=True
-)
-def movies(ctx, path, default):
-    rename_movies(ctx, path, default)
+@click.option("--force", "-f", "-y", help="Automatically rename", is_flag=True, default=False)
+def movies(ctx, path, force):
+    rename_movies(ctx, path, force)
 
 
 @main.command(help="Rename TV Series")
