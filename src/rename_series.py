@@ -53,16 +53,18 @@ RE_SEA = re.compile("SE?(\d+)EP?(\d+).*", re.IGNORECASE)
 RE_EA = re.compile("E?P?(\d+).*", re.IGNORECASE)
 
 
-def get_season_episode(file_name: str):
+def get_season_episode(file_name: str, season):
     if re.search(RE_SE, file_name):
         season, episode = re.search(RE_SE, file_name).groups()
         return AddZero(season), AddZero(episode)
-    elif re.search(RE_X, file_name):
+
+    if re.search(RE_X, file_name):
         season, episode = re.search(RE_X, file_name).groups()
         return AddZero(season), AddZero(episode)
-    elif re.search(RE_E, file_name):
+
+    if re.search(RE_E, file_name):
         episode = re.search(RE_E, file_name).groups()[0]
-        return AddZero(1), AddZero(episode)
+        return AddZero(1 if season is None else season), AddZero(episode)
 
     return "", ""
 
@@ -80,7 +82,7 @@ def AddZero(input):
     return input
 
 
-def rename_series(ctx, path, force):
+def rename_series(ctx, path, season, force):
     click.echo("Reading Files....")
 
     for file in sorted(os.listdir(path)):
@@ -108,7 +110,7 @@ def rename_series(ctx, path, force):
             file_name = file_name.replace(stuff, "")
         file_name = file_name.replace(".", " ")
 
-        season, episode = get_season_episode(file_name)
+        season, episode = get_season_episode(file_name, season)
         if not (season and episode):
             click.secho(f'No Season/Episode found in "{file_name}"', fg="red")
             continue
