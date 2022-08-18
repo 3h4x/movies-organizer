@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.5.0](https://github.com/3h4x/movies-organizer/compare/v2.4.0...v2.5.0) (2022-07-23)
+
+
+### Features
+
+* customize season detection with variable setting it to constant ([21328f3](https://github.com/3h4x/movies-organizer/commit/21328f34e649f72826f7b2cf1bc4ceac65dedc2e))
+
 ## [2.4.0](https://github.com/3h4x/movies-organizer/compare/v2.3.0...v2.4.0) (2022-07-21)
 
 
