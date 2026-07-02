@@ -33,6 +33,11 @@ export async function GET() {
       | "idle"
       | "running"
       | "error",
+    cda_dead_link_count: (() => {
+      const v = getSetting(db, "cda_dead_link_count");
+      return v ? parseInt(v, 10) : null;
+    })(),
+    cda_health_last_run: getSetting(db, "cda_health_last_run"),
     epg_url: getSetting(db, "epg_url") ?? "",
     epg_enabled: getSetting(db, "epg_enabled") !== "false",
     epg_refresh_interval_hours: (() => {

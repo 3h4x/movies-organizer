@@ -9,8 +9,19 @@ vi.mock("@/lib/cda-fetch", () => ({
   fetchAndStoreCdaMovies: vi.fn(),
 }));
 
+vi.mock("@/lib/cda-health", () => ({
+  runCdaHealthCheckPass: vi.fn(),
+}));
+
 import { fetchAndStoreCdaMovies } from "@/lib/cda-fetch";
-import { runCdaRefreshNow, rescheduleCdaJob, initCdaScheduler } from "@/lib/cda-scheduler";
+import { runCdaHealthCheckPass } from "@/lib/cda-health";
+import {
+  runCdaRefreshNow,
+  rescheduleCdaJob,
+  initCdaScheduler,
+  runCdaHealthCheckNow,
+  rescheduleCdaHealthJob,
+} from "@/lib/cda-scheduler";
 
 const TEST_DB = path.join(__dirname, "test-cda-scheduler.db");
 
@@ -139,6 +150,72 @@ describe("cda-scheduler", () => {
       expect(fetchAndStoreCdaMovies).not.toHaveBeenCalled();
     });
 
+  });
+
+  describe("runCdaHealthCheckNow", () => {
+    it("sets cda_health_status to running immediately", () => {
+      vi.mocked(runCdaHealthCheckPass).mockReturnValue(new Promise(() => {}));
+
+      runCdaHealthCheckNow(db);
+
+      expect(getSetting(db, "cda_health_status")).toBe("running");
+    });
+
+    it("does not start a pass if one is already running", () => {
+      setSetting(db, "cda_health_status", "running");
+
+      runCdaHealthCheckNow(db);
+
+      expect(runCdaHealthCheckPass).not.toHaveBeenCalled();
+    });
+
+    it("sets status to idle on success", async () => {
+      vi.mocked(runCdaHealthCheckPass).mockResolvedValue({
+        checked: 0,
+        dead: 0,
+        recovered: 0,
+      });
+
+      runCdaHealthCheckNow(db);
+      await vi.waitFor(() =>
+        expect(getSetting(db, "cda_health_status")).toBe("idle"),
+      );
+    });
+
+    it("sets status to error on failure", async () => {
+      vi.mocked(runCdaHealthCheckPass).mockRejectedValue(new Error("boom"));
+
+      runCdaHealthCheckNow(db);
+      await vi.waitFor(() =>
+        expect(getSetting(db, "cda_health_status")).toBe("error"),
+      );
+    });
+  });
+
+  describe("rescheduleCdaHealthJob", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.mocked(runCdaHealthCheckPass).mockReturnValue(new Promise(() => {}));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("does not fire when interval is explicitly 0", () => {
+      setSetting(db, "cda_health_interval_hours", "0");
+
+      rescheduleCdaHealthJob(db);
+      vi.advanceTimersByTime(48 * 60 * 60 * 1000);
+
+      expect(runCdaHealthCheckPass).not.toHaveBeenCalled();
+    });
+
+    it("fires on the default 12h cadence when no interval is configured", () => {
+      rescheduleCdaHealthJob(db);
+      vi.advanceTimersByTime(12 * 60 * 60 * 1000);
+
+      expect(runCdaHealthCheckPass).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe("initCdaScheduler", () => {

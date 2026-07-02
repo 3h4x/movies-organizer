@@ -52,6 +52,7 @@ type RecommendedRow = {
   pl_title: string | null;
   cda_url: string | null;
   description: string | null;
+  cda_last_status: number | null;
   created_at: string;
 };
 
@@ -67,6 +68,7 @@ function makeRec(overrides: Partial<RecommendedRow> & { tmdb_id: number; title: 
     pl_title: null,
     cda_url: "https://cda.pl/video/test",
     description: null,
+    cda_last_status: null,
     created_at: "2026-01-01",
     ...overrides,
   };
@@ -137,6 +139,24 @@ describe("cdaEngine", () => {
     const allRecs = result.flatMap((g) => g.recommendations);
     expect(allRecs.find((r) => r.title === "Inception")).toBeUndefined();
     expect(allRecs.find((r) => r.title === "The Matrix")).toBeDefined();
+  });
+
+  it("excludes links marked dead (404/410) but keeps live and unchecked ones", async () => {
+    mockGetRecommendedMovies.mockReturnValue([
+      makeRec({ tmdb_id: 1, title: "Dead 404", cda_last_status: 404 }),
+      makeRec({ tmdb_id: 2, title: "Dead 410", cda_last_status: 410 }),
+      makeRec({ tmdb_id: 3, title: "Live 200", cda_last_status: 200 }),
+      makeRec({ tmdb_id: 4, title: "Unchecked", cda_last_status: null }),
+    ]);
+
+    const ctx = buildContext([], new Set());
+    const result = await cdaEngine(ctx);
+
+    const allRecs = result.flatMap((g) => g.recommendations);
+    expect(allRecs.find((r) => r.tmdb_id === 1)).toBeUndefined();
+    expect(allRecs.find((r) => r.tmdb_id === 2)).toBeUndefined();
+    expect(allRecs.find((r) => r.tmdb_id === 3)).toBeDefined();
+    expect(allRecs.find((r) => r.tmdb_id === 4)).toBeDefined();
   });
 
   it("filters out dismissed movies", async () => {

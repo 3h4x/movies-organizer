@@ -2,6 +2,7 @@ import { getDb, getRecommendedMovies, getDismissedIds } from "../db";
 import { normalizeTitle, type EngineContext, type RecommendationGroup } from "./index";
 import type { TmdbSearchResult } from "../tmdb";
 import { parseGenreLabels } from "../utils";
+import { isCdaLinkDead } from "../cda-health";
 
 export async function cdaEngine(
   ctx: EngineContext,
@@ -29,6 +30,7 @@ export async function cdaEngine(
   const genreGroups = new Map<string, TmdbSearchResult[]>();
 
   for (const m of cdaMovies) {
+    if (isCdaLinkDead(m.cda_last_status)) continue;
     if (dismissedIds.has(m.tmdb_id)) continue;
     if (ctx.libraryTmdbIds.has(m.tmdb_id)) continue;
     if (ctx.libraryTitles.has(normalizeTitle(m.title))) continue;

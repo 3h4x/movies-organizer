@@ -2,8 +2,13 @@
 import type Database from "better-sqlite3";
 import { getSetting, setSetting } from "@/lib/db";
 import { fetchAndStoreCdaMovies } from "@/lib/cda-fetch";
+import { runCdaHealthCheckPass } from "@/lib/cda-health";
+
+// Default cadence for the dead-link health check when no interval is configured.
+const DEFAULT_HEALTH_INTERVAL_HOURS = 12;
 
 let activeTimer: ReturnType<typeof setInterval> | null = null;
+let healthTimer: ReturnType<typeof setInterval> | null = null;
 let shutdownHandlerInstalled = false;
 
 function clearCdaTimer(): void {
@@ -11,6 +16,18 @@ function clearCdaTimer(): void {
     clearInterval(activeTimer);
     activeTimer = null;
   }
+}
+
+function clearCdaHealthTimer(): void {
+  if (healthTimer !== null) {
+    clearInterval(healthTimer);
+    healthTimer = null;
+  }
+}
+
+function clearAllCdaTimers(): void {
+  clearCdaTimer();
+  clearCdaHealthTimer();
 }
 
 export function runCdaRefreshNow(db: Database.Database): void {
@@ -33,6 +50,41 @@ export function runCdaRefreshNow(db: Database.Database): void {
   })();
 }
 
+export function runCdaHealthCheckNow(db: Database.Database): void {
+  if (getSetting(db, "cda_health_status") === "running") return;
+  setSetting(db, "cda_health_status", "running");
+
+  void (async () => {
+    try {
+      const result = await runCdaHealthCheckPass(db);
+      if (result.dead > 0 || result.recovered > 0) {
+        console.log(
+          `[cda] health check: ${result.checked} checked, ${result.dead} newly dead, ${result.recovered} recovered`,
+        );
+      }
+      setSetting(db, "cda_health_status", "idle");
+    } catch (err) {
+      console.error("[cda] Health check failed:", err);
+      setSetting(db, "cda_health_status", "error");
+    }
+  })();
+}
+
+export function rescheduleCdaHealthJob(db: Database.Database): void {
+  clearCdaHealthTimer();
+
+  const intervalStr = getSetting(db, "cda_health_interval_hours");
+  const hours = intervalStr
+    ? parseInt(intervalStr, 10)
+    : DEFAULT_HEALTH_INTERVAL_HOURS;
+  if (hours === 0) return;
+
+  const ms = hours * 60 * 60 * 1000;
+  healthTimer = setInterval(() => {
+    runCdaHealthCheckNow(db);
+  }, ms);
+}
+
 export function rescheduleCdaJob(db: Database.Database): void {
   clearCdaTimer();
 
@@ -48,7 +100,7 @@ export function rescheduleCdaJob(db: Database.Database): void {
 
 export function initCdaScheduler(db: Database.Database): void {
   if (!shutdownHandlerInstalled) {
-    process.once("SIGTERM", clearCdaTimer);
+    process.once("SIGTERM", clearAllCdaTimers);
     shutdownHandlerInstalled = true;
   }
 
@@ -56,5 +108,9 @@ export function initCdaScheduler(db: Database.Database): void {
   if (getSetting(db, "cda_refresh_status") === "running") {
     setSetting(db, "cda_refresh_status", "idle");
   }
+  if (getSetting(db, "cda_health_status") === "running") {
+    setSetting(db, "cda_health_status", "idle");
+  }
   rescheduleCdaJob(db);
+  rescheduleCdaHealthJob(db);
 }

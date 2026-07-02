@@ -99,6 +99,8 @@ function makeRecommendedMovie(overrides: Partial<RecommendedMovie> & { tmdb_id: 
     pl_title: null,
     cda_url: "https://cda.pl/video/test",
     description: null,
+    cda_last_status: null,
+    cda_last_checked_at: null,
     created_at: "2026-01-01",
     ...rest,
     trace: trace ?? null,

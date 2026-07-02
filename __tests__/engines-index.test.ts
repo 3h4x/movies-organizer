@@ -431,6 +431,8 @@ function makeCdaMovie(overrides: Partial<RecommendedMovie> & { tmdb_id: number; 
     pl_title: null,
     cda_url: "https://cda.pl/video/default",
     description: null,
+    cda_last_status: null,
+    cda_last_checked_at: null,
     created_at: "2026-01-01",
     ...rest,
     trace: trace ?? null,

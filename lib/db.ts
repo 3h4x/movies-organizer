@@ -281,6 +281,14 @@ export function initDb(db: Database.Database): void {
   if (!recMovieCols.includes("trace")) {
     db.exec("ALTER TABLE recommended_movies ADD COLUMN trace TEXT");
   }
+  // CDA link health: when each cda_url was last probed and the HTTP status it
+  // returned, so dead links (404/410) can be detected and excluded over time.
+  if (!recMovieCols.includes("cda_last_checked_at")) {
+    db.exec("ALTER TABLE recommended_movies ADD COLUMN cda_last_checked_at TEXT");
+  }
+  if (!recMovieCols.includes("cda_last_status")) {
+    db.exec("ALTER TABLE recommended_movies ADD COLUMN cda_last_status INTEGER");
+  }
 
   // Migration: old recommendation_cache had 'id' column, new one has 'engine'
   const cacheInfo = db.pragma("table_info(recommendation_cache)") as {
@@ -387,6 +395,7 @@ export function initDb(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_movies_type ON movies (type);
     CREATE INDEX IF NOT EXISTS idx_movies_source ON movies (source);
     CREATE INDEX IF NOT EXISTS idx_recommended_movies_tmdb_id ON recommended_movies (tmdb_id);
+    CREATE INDEX IF NOT EXISTS idx_recommended_movies_cda_checked ON recommended_movies (engine, cda_last_checked_at);
   `);
 }
 
@@ -771,6 +780,8 @@ export interface RecommendedMovie {
   cda_url: string | null;
   description: string | null;
   trace: RecommendationTrace | null;
+  cda_last_status: number | null;
+  cda_last_checked_at: string | null;
   created_at: string;
 }
 
@@ -788,6 +799,8 @@ interface RecommendedMovieRow {
   cda_url: string | null;
   description: string | null;
   trace: string | null;
+  cda_last_status: number | null;
+  cda_last_checked_at: string | null;
   created_at: string;
 }
 
@@ -867,7 +880,8 @@ export function getRecommendedMovies(
        LIMIT 1),
       rm.poster_url
     ) AS poster_url,
-    rm.pl_title, rm.cda_url, rm.description, rm.trace, rm.created_at
+    rm.pl_title, rm.cda_url, rm.description, rm.trace,
+    rm.cda_last_status, rm.cda_last_checked_at, rm.created_at
   `;
   if (engine) {
     return (db

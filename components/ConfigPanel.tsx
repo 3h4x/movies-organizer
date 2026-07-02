@@ -153,6 +153,7 @@ export default function ConfigPanel({
   const [cdaStatus, setCdaStatus] = useState<"idle" | "running" | "error">("idle");
   const [cdaLastRefresh, setCdaLastRefresh] = useState<string | null>(null);
   const [cdaMovieCount, setCdaMovieCount] = useState<number | null>(null);
+  const [cdaDeadCount, setCdaDeadCount] = useState<number | null>(null);
   const [tmdbHealth, setTmdbHealth] = useState<TmdbHealthSnapshot | null>(null);
   const [tmdbRefreshState, setTmdbRefreshState] = useState<"idle" | "running">("idle");
 
@@ -216,6 +217,7 @@ export default function ConfigPanel({
         setCdaStatus(s.cda_refresh_status ?? "idle");
         setCdaLastRefresh(s.cda_last_refresh ?? null);
         setCdaMovieCount(s.cda_movie_count ?? null);
+        setCdaDeadCount(s.cda_dead_link_count ?? null);
         setTvHideUnrated(s.tv_hide_unrated ?? true);
         setEpgEnabled(s.epg_enabled ?? true);
         setEpgUrlDraft(s.epg_url ?? "");
@@ -807,6 +809,9 @@ export default function ConfigPanel({
                 </p>
                 {cdaMovieCount !== null && (
                   <p>Movies: <span className="text-gray-400">{cdaMovieCount.toLocaleString()}</span></p>
+                )}
+                {cdaDeadCount !== null && cdaDeadCount > 0 && (
+                  <p>Dead links hidden: <span className="text-gray-400">{cdaDeadCount.toLocaleString()}</span></p>
                 )}
               </div>
             </div>
