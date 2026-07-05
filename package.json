@@ -46,7 +46,7 @@
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^6",
-    "vitest": "^4.1.4"
+    "vitest": "^4.1.9"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
