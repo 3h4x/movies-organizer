@@ -100,6 +100,7 @@ pnpm backup              # Backup SQLite DB
 │   ├── search.ts                     — Shared search types (SearchMatches, TmdbSearchMovieState)
 │   ├── latest-only-runner.ts         — Utility: run async tasks, discard stale (latest-wins)
 │   ├── scanner.ts                    — Filesystem video scanner + filename parser
+│   ├── subtitles.ts                  — Subtitle format sniffing (SubRip/MicroDVD/MPL2/TMP/VTT/ASS), encoding detection, conversion to SubRip
 │   ├── hooks/                        — React hooks
 │   │   ├── useLibrary.ts             — Library fetch + filtering state
 │   │   ├── useRecommendations.ts     — Recommendations fetch + state
@@ -319,7 +320,8 @@ TMDB_API_KEY=<your_key> docker run -p 4000:4000 -v $(pwd)/data:/app/data -e TMDB
 12. **Preserve the current standalone deployment contract** when touching build/runtime config: `next.config.ts` must keep `output: "standalone"` and `serverExternalPackages: ["better-sqlite3"]` unless every Docker/deployment path is re-verified.
 13. **Direct `new Database(...)` calls are an exception reserved for isolated backup/test code.** Production reads/writes should continue to go through `getDb()`; the current allowed non-singleton cases are `lib/backup.ts` (readonly backup handle) and Vitest DB setup/fixtures.
 14. **Standalone maintenance/import scripts under `scripts/` may also open their own `new Database(dbPath)` handle** because they run as one-off Node processes outside the app singleton lifecycle. Keep that exception scoped to `scripts/`; do not copy it into `app/`, `components/`, or long-lived `lib/` runtime code.
-15. **App startup side effects belong in `instrumentation.ts`.** Background jobs such as backups and scheduler initialization should start from `register()` behind the existing `NEXT_RUNTIME === "nodejs"` guard, not from route handlers, components, or ad-hoc module top-level code.
+15. **Never infer a subtitle's format from its extension.** Files named `.srt` routinely hold MicroDVD or MPL2, and mislabelling them makes players render nothing. Route `lib/subtitles.ts` (`normalizeSubtitle` on upload, `subtitleExtensionForContent` on rename) over the bytes instead; frame-based formats need the movie's fps from ffprobe.
+16. **App startup side effects belong in `instrumentation.ts`.** Background jobs such as backups and scheduler initialization should start from `register()` behind the existing `NEXT_RUNTIME === "nodejs"` guard, not from route handlers, components, or ad-hoc module top-level code.
 
 ## Dependency & Supply-Chain Security
 

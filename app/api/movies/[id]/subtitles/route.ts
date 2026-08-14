@@ -2,11 +2,46 @@ import { NextRequest } from "next/server";
 import { getDb, Movie } from "@/lib/db";
 import { getErrorMessage } from "@/lib/utils";
 import { rateLimit } from "@/lib/rate-limit";
+import { DEFAULT_FPS, normalizeSubtitle } from "@/lib/subtitles";
 import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
+import { execFile } from "child_process";
+import { promisify } from "util";
+
+const execFileAsync = promisify(execFile);
 
 const SUBTITLE_EXTENSIONS = [".srt", ".sub", ".txt", ".ass"];
+
+/**
+ * Frame rate of the movie, needed to turn frame-based subtitles (MicroDVD) into
+ * timestamps. Falls back to the common film rate when ffprobe is unavailable —
+ * a slightly wrong rate still beats refusing the upload.
+ */
+async function probeFps(filePath: string): Promise<number> {
+  try {
+    const { stdout } = await execFileAsync(
+      "ffprobe",
+      [
+        "-v",
+        "error",
+        "-select_streams",
+        "v:0",
+        "-show_entries",
+        "stream=r_frame_rate",
+        "-of",
+        "default=nw=1:nk=1",
+        filePath,
+      ],
+      { timeout: 30000 },
+    );
+    const [num, den] = stdout.trim().split("/");
+    const fps = den ? Number(num) / Number(den) : Number(num);
+    return Number.isFinite(fps) && fps >= 10 && fps <= 120 ? fps : DEFAULT_FPS;
+  } catch {
+    return DEFAULT_FPS;
+  }
+}
 
 export async function GET(
   _request: NextRequest,
@@ -113,21 +148,35 @@ export async function POST(
       );
     }
 
-    // Always use .srt as extension for all subtitle files
-    // If the movie file was already standardized, movieFileNameNoExt is just Title (no year)
-    // The target filename must match the movie filename exactly
-    const newFileName = movieFileNameNoExt + ".srt";
-    const targetPath = path.join(movieDir, newFileName);
-
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
+
+    // The upload's extension is only a hint — plenty of files named `.srt` hold
+    // MicroDVD, which players silently render as nothing. Trust the bytes instead,
+    // converting to SubRip where we can and keeping an honest extension where we can't.
+    const fps = await probeFps(filePath);
+    const normalized = normalizeSubtitle(buffer, {
+      fps,
+      fallbackExtension: originalExt,
+    });
+
+    // If the movie file was already standardized, movieFileNameNoExt is just Title (no year).
+    // The target filename must match the movie filename exactly.
+    const newFileName = movieFileNameNoExt + normalized.extension;
+    const targetPath = path.join(movieDir, newFileName);
 
     console.log(
       `[Subtitles] Uploading for movie ${movieId}: ${file.name} -> ${newFileName}`,
     );
+    console.log(
+      `[Subtitles] Detected ${normalized.format} (${normalized.encoding})` +
+        (normalized.converted
+          ? `, converted to SubRip at ${fps.toFixed(3)} fps, ${normalized.cueCount} cues`
+          : ", stored as-is"),
+    );
     console.log(`[Subtitles] Target path: ${targetPath}`);
 
-    await fs.writeFile(targetPath, buffer);
+    await fs.writeFile(targetPath, normalized.content);
 
     console.log(
       `[Subtitles] Successfully added subtitle for movie ${movieId}: ${newFileName}`,
@@ -138,6 +187,10 @@ export async function POST(
       message: "Subtitle added successfully",
       fileName: newFileName,
       path: targetPath,
+      format: normalized.format,
+      encoding: normalized.encoding,
+      converted: normalized.converted,
+      cueCount: normalized.cueCount,
     });
   } catch (error) {
     console.error("Failed to add subtitle:", error);

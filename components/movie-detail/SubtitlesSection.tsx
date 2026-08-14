@@ -68,7 +68,7 @@ export default function SubtitlesSection({
                       {sub.name}
                     </span>
                     <span className="text-[10px] opacity-0 group-hover:opacity-100 transition-opacity text-gray-600">
-                      .srt
+                      {sub.name.slice(sub.name.lastIndexOf(".")) || "?"}
                     </span>
                   </div>
                 ))}
@@ -118,7 +118,7 @@ export default function SubtitlesSection({
                     ? "Uploading..."
                     : isDraggingSub
                       ? "Drop Subtitle"
-                      : "Drop .srt here"}
+                      : "Drop .srt / .sub / .txt here"}
                 </span>
                 <input
                   type="file"
