@@ -38,6 +38,23 @@ vi.mock("fs", async (importOriginal) => {
   };
 });
 
+// The upload handler probes the movie's frame rate with ffprobe. There is no real
+// video file here, so fail the probe and let the handler fall back to its default.
+vi.mock("child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("child_process")>();
+  return {
+    ...actual,
+    execFile: (
+      ..._args: [string, string[], object, (error: Error | null) => void]
+    ) => {
+      const callback = _args[_args.length - 1];
+      if (typeof callback === "function") {
+        callback(new Error("ffprobe unavailable in tests"));
+      }
+    },
+  };
+});
+
 // Patch only getDb so the handler uses our test database.
 vi.mock("@/lib/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/db")>();
@@ -339,16 +356,79 @@ describe("movies/[id]/subtitles POST handler", () => {
     expect(body.path).toBe("/movies/Inception [2010]/Inception.srt");
   });
 
-  it("normalises .ass subtitle upload to .srt filename", async () => {
+  it("keeps an .ass upload as .ass rather than mislabelling it SubRip", async () => {
     mockExistsSync.mockReturnValue(true);
     mockWriteFile.mockResolvedValue(undefined);
 
-    const file = new File(["[Script Info]"], "movie.ass", { type: "text/plain" });
+    const file = new File(["[Script Info]\nScriptType: v4.00+"], "movie.ass", {
+      type: "text/plain",
+    });
     const req = makePostReq(movieId, file);
     const res = await POST(req, makeParams(movieId));
     expect(res.status).toBe(200);
     const body = await res.json();
+    expect(body.fileName).toBe("Inception.ass");
+    expect(body.format).toBe("ass");
+    expect(body.converted).toBe(false);
+  });
+
+  it("converts a MicroDVD payload that arrives named .srt", async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockWriteFile.mockResolvedValue(undefined);
+
+    // Exactly the trap that broke playback: MicroDVD frames under an .srt name.
+    const file = new File(
+      ["{1227}{1372}First line\r\n{1742}{1792}Second line"],
+      "movie.srt",
+      { type: "text/plain" },
+    );
+    const req = makePostReq(movieId, file);
+    const res = await POST(req, makeParams(movieId));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.format).toBe("microdvd");
+    expect(body.converted).toBe(true);
+    expect(body.cueCount).toBe(2);
     expect(body.fileName).toBe("Inception.srt");
+
+    // The bytes written must be real SubRip, not the original frame markers.
+    const written = mockWriteFile.mock.calls.at(-1)?.[1] as Buffer;
+    const text = written.toString("utf8");
+    expect(text).toContain(" --> ");
+    expect(text).not.toContain("{1227}");
+  });
+
+  it("converts a MicroDVD .txt upload and saves it as .srt", async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockWriteFile.mockResolvedValue(undefined);
+
+    const file = new File(["{100}{200}Hello"], "napisy.txt", {
+      type: "text/plain",
+    });
+    const req = makePostReq(movieId, file);
+    const res = await POST(req, makeParams(movieId));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.format).toBe("microdvd");
+    expect(body.fileName).toBe("Inception.srt");
+  });
+
+  it("keeps the uploaded extension when the content is unrecognisable", async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockWriteFile.mockResolvedValue(undefined);
+
+    const file = new File(["just some notes"], "movie.txt", {
+      type: "text/plain",
+    });
+    const req = makePostReq(movieId, file);
+    const res = await POST(req, makeParams(movieId));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.format).toBe("unknown");
+    expect(body.fileName).toBe("Inception.txt");
   });
 
   it("returns 500 when writeFile throws", async () => {

@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { getDb, Movie } from "@/lib/db";
 import { parseFilename, getErrorMessage } from "@/lib/utils";
 import { rateLimit } from "@/lib/rate-limit";
+import { subtitleExtensionForContent } from "@/lib/subtitles";
 import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
@@ -372,13 +373,23 @@ export async function POST(
           (fileNameNoExt === oldFileNameNoExt ||
             fileNameNoExt.startsWith(oldFileNameNoExt))
         ) {
-          // Always rename to .srt as per user request
-          const targetSubExt = ".srt";
+          const oldSubPath = path.join(oldDir, file);
+          // Name the file after what it actually contains. Forcing `.srt` here used
+          // to relabel MicroDVD payloads as SubRip, which players render as nothing.
+          let targetSubExt = fileExt;
+          try {
+            targetSubExt = subtitleExtensionForContent(
+              await fs.readFile(oldSubPath),
+              fileExt,
+            );
+          } catch (e) {
+            console.warn(`- Could not sniff subtitle format for ${file}:`, e);
+          }
           const newSubName =
             fileNameNoExt.replace(oldFileNameNoExt, finalTitle) + targetSubExt;
           const newSubPath = path.join(targetDir, newSubName);
           console.log(`- Moving subtitle: ${file} -> ${newSubName}`);
-          await fs.rename(path.join(oldDir, file), newSubPath);
+          await fs.rename(oldSubPath, newSubPath);
         }
       }
     }
