@@ -2,7 +2,10 @@ import { NextRequest } from "next/server";
 import { getDb, Movie } from "@/lib/db";
 import { parseFilename, getErrorMessage } from "@/lib/utils";
 import { rateLimit } from "@/lib/rate-limit";
-import { subtitleExtensionForContent } from "@/lib/subtitles";
+import {
+  SUBTITLE_EXTENSIONS,
+  subtitleExtensionForContent,
+} from "@/lib/subtitles";
 import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
@@ -20,7 +23,6 @@ const VIDEO_EXTENSIONS = new Set([
 
 const UNSAFE_FILENAME_CHARS = /[\\/:*?"<>|]/g;
 
-const SUBTITLE_EXTENSIONS = new Set([".srt", ".sub", ".txt", ".ass"]);
 
 export async function POST(
   request: NextRequest,
@@ -163,6 +165,9 @@ export async function POST(
 
   const targetDir = path.join(libraryRoot, folderName);
   const newPath = path.join(targetDir, targetFileName);
+  // Subtitles must end up sharing the video's basename exactly — including the CD
+  // suffix and the unsafe-character stripping — or nothing will find them again.
+  const targetFileNameNoExt = path.basename(targetFileName, ext);
 
   console.log(`Standardizing movie: id=${movieId}, title="${movie.title}"`);
   console.log(`- libraryRoot: ${libraryRoot}`);
@@ -369,7 +374,7 @@ export async function POST(
 
         // If subtitle matches the old movie filename or starts with it
         if (
-          SUBTITLE_EXTENSIONS.has(fileExt) &&
+          SUBTITLE_EXTENSIONS.includes(fileExt) &&
           (fileNameNoExt === oldFileNameNoExt ||
             fileNameNoExt.startsWith(oldFileNameNoExt))
         ) {
@@ -385,8 +390,11 @@ export async function POST(
           } catch (e) {
             console.warn(`- Could not sniff subtitle format for ${file}:`, e);
           }
+          // Replacer function, not a string: a title containing `$&` or `$'` would
+          // otherwise be interpreted as a substitution pattern.
           const newSubName =
-            fileNameNoExt.replace(oldFileNameNoExt, finalTitle) + targetSubExt;
+            fileNameNoExt.replace(oldFileNameNoExt, () => targetFileNameNoExt) +
+            targetSubExt;
           const newSubPath = path.join(targetDir, newSubName);
           console.log(`- Moving subtitle: ${file} -> ${newSubName}`);
           await fs.rename(oldSubPath, newSubPath);

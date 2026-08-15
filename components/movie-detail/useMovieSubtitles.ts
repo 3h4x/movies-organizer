@@ -16,6 +16,23 @@ interface SubtitleUploadResponse {
   error?: string;
 }
 
+/**
+ * Insert an uploaded track, or replace the one already occupying its path.
+ *
+ * The server writes to a deterministic path, so re-uploading overwrites the file
+ * on disk — appending would list the same track twice. Replacement happens in
+ * place because the list is rendered with index-based React keys, so moving an
+ * entry to the end would remount the corresponding <track> element.
+ */
+export function upsertSubtitleTrack(
+  list: SubtitleTrack[],
+  track: SubtitleTrack,
+): SubtitleTrack[] {
+  return list.some((sub) => sub.path === track.path)
+    ? list.map((sub) => (sub.path === track.path ? track : sub))
+    : [...list, track];
+}
+
 export function getSubtitleContextKey({
   movieId,
   filePath,
@@ -112,7 +129,7 @@ export function useMovieSubtitles({
         const uploadedSubtitle = { name: data.fileName, path: data.path };
         console.log(`[Subtitles] Upload successful: ${uploadedSubtitle.name}`);
         setHasSubtitles(true);
-        setSubtitlesList((prev) => [...prev, uploadedSubtitle]);
+        setSubtitlesList((prev) => upsertSubtitleTrack(prev, uploadedSubtitle));
       } else {
         console.warn(`[Subtitles] Upload failed: ${data.error}`);
         setSubtitleError(data.error || "Upload failed");

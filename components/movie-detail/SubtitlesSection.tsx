@@ -122,7 +122,7 @@ export default function SubtitlesSection({
                 </span>
                 <input
                   type="file"
-                  accept=".srt,.sub,.txt,.ass"
+                  accept=".srt,.sub,.txt,.ass,.vtt"
                   className="hidden"
                   onChange={(event) => {
                     const file = event.target.files?.[0];

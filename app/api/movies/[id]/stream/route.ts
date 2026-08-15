@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, Movie } from "@/lib/db";
 import { getErrorMessage } from "@/lib/utils";
+import {
+  DEFAULT_FPS,
+  decodeSubtitleBuffer,
+  detectSubtitleFormat,
+  normalizeSubtitle,
+  readMicroDvdFps,
+} from "@/lib/subtitles";
+import { probeFps } from "@/lib/ffprobe";
 import fs from "fs";
 import { stat } from "fs/promises";
 import path from "path";
@@ -40,25 +48,49 @@ export async function GET(
       if (!path.resolve(subPath).startsWith(path.resolve(movieDir) + path.sep)) {
         return new NextResponse("Invalid subtitle path", { status: 400 });
       }
+      let raw: Buffer;
       try {
-        let subContent = await fs.promises.readFile(subPath, "utf-8");
+        // Bytes, not "utf-8": much of a real library is windows-1250 and would
+        // decode straight to U+FFFD.
+        raw = await fs.promises.readFile(subPath);
+      } catch {
+        return new NextResponse("Subtitle not found", { status: 404 });
+      }
 
-        // Convert SRT to VTT if needed
-        if (subPath.toLowerCase().endsWith(".srt")) {
-          subContent =
-            "WEBVTT\n\n" +
-            subContent.replace(SRT_TIMESTAMP_RE, "$1.$2");
-        }
-
-        return new NextResponse(subContent, {
+      const vttResponse = (body: string) =>
+        new NextResponse(body, {
           headers: {
             "Content-Type": "text/vtt",
             "Content-Disposition": "inline",
           },
         });
-      } catch (e) {
-        return new NextResponse("Subtitle not found", { status: 404 });
+
+      // Never trust the extension here either: `.srt` routinely holds MicroDVD and
+      // standardize deliberately names such payloads `.sub`.
+      const { text } = decodeSubtitleBuffer(raw);
+      const format = detectSubtitleFormat(text);
+
+      // Already WebVTT — only the encoding ever needed fixing.
+      if (format === "vtt") return vttResponse(text);
+
+      // MicroDVD counts frames, so it needs the movie's real rate; everything else
+      // is time-based and never touches fps, so skip the ffprobe spawn.
+      const fps =
+        format === "microdvd" && readMicroDvdFps(text) === null
+          ? await probeFps(activeFilePath)
+          : DEFAULT_FPS;
+
+      const normalized = normalizeSubtitle(raw, { fps });
+      if (!normalized.converted) {
+        // ASS/SSA or unparsable — a <track> element cannot render it either way.
+        // Say so instead of mislabelling the bytes as WebVTT.
+        return new NextResponse("Unsupported subtitle format", { status: 415 });
       }
+
+      return vttResponse(
+        "WEBVTT\n\n" +
+          normalized.content.toString("utf8").replace(SRT_TIMESTAMP_RE, "$1.$2"),
+      );
     }
 
     const fileStat = await stat(activeFilePath);
