@@ -3,3 +3,13 @@ allowBuilds:
   esbuild: true
   sharp: true
   unrs-resolver: false
+
+# Supply-chain guard: refuse to install any package version published less than
+# 7 days ago (value is in MINUTES — 7 * 1440). Compromised releases are typically
+# caught and unpublished within hours, so the delay keeps them out of the tree.
+# pnpm 11 defaults this to 1440 (one day); we deliberately widen it.
+#
+# Setting this explicitly also turns on minimumReleaseAgeStrict, so an install
+# FAILS rather than silently falling back when no version is old enough. Add the
+# offending package to minimumReleaseAgeExclude if you ever need to override that.
+minimumReleaseAge: 10080
