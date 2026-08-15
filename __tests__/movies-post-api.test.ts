@@ -39,6 +39,28 @@ describe("POST /api/movies", () => {
     vi.clearAllMocks();
   });
 
+  it("returns 400 for a malformed JSON body instead of throwing", async () => {
+    const req = new NextRequest("http://localhost/api/movies", {
+      method: "POST",
+      body: "{not json",
+      headers: { "Content-Type": "application/json" },
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/invalid json/i);
+  });
+
+  it("returns 400 for an empty body instead of throwing", async () => {
+    const req = new NextRequest("http://localhost/api/movies", {
+      method: "POST",
+      body: "",
+      headers: { "Content-Type": "application/json" },
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+  });
+
   it("returns 400 when title is missing", async () => {
     const res = await POST(postReq({ year: 2020 }));
     expect(res.status).toBe(400);

@@ -420,7 +420,14 @@ export async function PATCH(
   if (limited) return limited;
   const { id } = await params;
   const db = getDb();
-  const body = await request.json();
+  // A malformed or empty body rejects here; without the guard the SyntaxError
+  // escapes the handler as an unhandled 500 instead of a 400.
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
   // Validate fields at the system boundary before touching the DB
   if ("user_rating" in body && body.user_rating !== null) {
