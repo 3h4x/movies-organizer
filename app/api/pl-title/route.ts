@@ -1,8 +1,11 @@
 import { NextRequest } from "next/server";
 import { getMovieLocalized } from "@/lib/tmdb";
 import { getDb, updateRecommendedMovie } from "@/lib/db";
+import { rateLimit } from "@/lib/rate-limit";
 
 export async function GET(request: NextRequest) {
+  const limited = rateLimit(request, "tmdb");
+  if (limited) return limited;
   const tmdbId = parseInt(
     request.nextUrl.searchParams.get("tmdb_id") || "",
     10,

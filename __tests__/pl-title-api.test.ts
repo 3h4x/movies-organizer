@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 import Database from "better-sqlite3";
@@ -10,7 +11,7 @@ import {
   getRecommendedMovies,
 } from "@/lib/db";
 
-// Patch only getDb so the route uses our in-memory DB
+// Patch only getDb so the route uses our test DB.
 vi.mock("@/lib/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/db")>();
   return { ...actual, getDb: vi.fn() };

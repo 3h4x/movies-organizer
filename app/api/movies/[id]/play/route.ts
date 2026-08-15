@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, Movie } from "@/lib/db";
+import { rateLimit } from "@/lib/rate-limit";
 import { getErrorMessage } from "@/lib/utils";
 import { execFile } from "child_process";
 import { promisify } from "util";
@@ -12,6 +13,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const limited = rateLimit(req, "mutation");
+  if (limited) return limited;
   const { id: movieId } = await params;
   const { action = "play" } = await req.json(); // "play" or "folder"
 
@@ -31,17 +34,12 @@ export async function POST(
     const extraFiles = movie.extra_files ? JSON.parse(movie.extra_files) : [];
     const allFiles = [filePath, ...extraFiles];
 
-    // Check if files exist
-    const missing = [];
-    for (const f of allFiles) {
-      try {
-        await fs.access(f);
-      } catch (e) {
-        missing.push(f);
-      }
-    }
+    const accessResults = await Promise.all(
+      allFiles.map((f) => fs.access(f).then(() => true, () => false)),
+    );
+    const missingCount = accessResults.filter((ok) => !ok).length;
 
-    if (missing.length === allFiles.length) {
+    if (missingCount === allFiles.length) {
       return NextResponse.json(
         {
           error: "No files found on disk",

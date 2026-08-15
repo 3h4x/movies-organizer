@@ -132,7 +132,7 @@ export default function MovieCard({
 
         {actionButtons.length > 0 && (
           <div className="absolute top-2 right-2 z-10">
-            <div className="hidden flex-col gap-1 opacity-0 transition-all duration-200 [@media(hover:hover)]:flex [@media(hover:hover)]:group-hover:opacity-100">
+            <div className="pointer-events-none hidden flex-col gap-1 opacity-0 transition-all duration-200 [@media(hover:hover)]:flex [@media(hover:hover)]:group-hover:pointer-events-auto [@media(hover:hover)]:group-hover:opacity-100">
               {actionButtons.map((action) => (
                 <button
                   key={action.key}

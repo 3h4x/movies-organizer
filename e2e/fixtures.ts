@@ -1,3 +1,11 @@
+// tamtam inspected 2026-05-21
+
+// 1x1 transparent gif so MovieCard's poster-less fallback (which also renders
+// the title as a <p>) doesn't trigger and duplicate text content under
+// strict-mode locators.
+export const MOCK_POSTER =
+  "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
 export const MOCK_MOVIES = [
   {
     id: 1,
@@ -9,7 +17,7 @@ export const MOCK_MOVIES = [
     actors: "Marlon Brando, Al Pacino",
     rating: 9.2,
     user_rating: 10,
-    poster_url: null,
+    poster_url: MOCK_POSTER,
     source: "tmdb",
     type: "movie",
     tmdb_id: 238,
@@ -31,7 +39,7 @@ export const MOCK_MOVIES = [
     actors: "Ryan Gosling, Harrison Ford",
     rating: 8.0,
     user_rating: 8,
-    poster_url: null,
+    poster_url: MOCK_POSTER,
     source: "filmweb",
     type: "movie",
     tmdb_id: 335984,
@@ -74,7 +82,7 @@ export const MOCK_RECS = [
         year: 1990,
         genre: "Crime, Drama",
         rating: 8.7,
-        poster_url: null,
+        poster_url: MOCK_POSTER,
       },
     ],
   },

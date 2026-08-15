@@ -1,7 +1,10 @@
+const SKELETON_GROUPS = [1, 2, 3];
+const SKELETON_CARDS = [1, 2, 3, 4, 5];
+
 export default function RecommendationSkeleton() {
   return (
     <div className="space-y-10 animate-pulse">
-      {[1, 2, 3].map((group) => (
+      {SKELETON_GROUPS.map((group) => (
         <div key={group}>
           {/* Header skeleton */}
           <div className="flex items-center gap-3 mb-4">
@@ -11,7 +14,7 @@ export default function RecommendationSkeleton() {
           </div>
           {/* Cards skeleton */}
           <div className="flex gap-4 overflow-hidden">
-            {[1, 2, 3, 4, 5].map((card) => (
+            {SKELETON_CARDS.map((card) => (
               <div
                 key={card}
                 className="min-w-[160px] max-w-[160px] flex-shrink-0"

@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 import Database from "better-sqlite3";
@@ -24,9 +25,11 @@ function postReq(body: Record<string, unknown>) {
   });
 }
 
-function getReq(type?: string) {
-  const url = type
-    ? `http://localhost/api/movies?type=${encodeURIComponent(type)}`
+function getReq(params: Record<string, string> = {}) {
+  const searchParams = new URLSearchParams(params);
+  const query = searchParams.toString();
+  const url = query
+    ? `http://localhost/api/movies?${query}`
     : "http://localhost/api/movies";
   return new NextRequest(url);
 }
@@ -75,7 +78,7 @@ describe("GET /api/movies", () => {
       "INSERT INTO movies (title, year, type, source) VALUES (?, ?, ?, ?)",
     ).run("Breaking Bad", 2008, "series", "tmdb");
 
-    const res = await GET(getReq("movie"));
+    const res = await GET(getReq({ type: "movie" }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toHaveLength(1);
@@ -90,11 +93,99 @@ describe("GET /api/movies", () => {
       "INSERT INTO movies (title, year, type, source) VALUES (?, ?, ?, ?)",
     ).run("Breaking Bad", 2008, "series", "tmdb");
 
-    const res = await GET(getReq("series"));
+    const res = await GET(getReq({ type: "series" }));
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toHaveLength(1);
     expect(body[0].title).toBe("Breaking Bad");
+  });
+
+  it("searches the library with FTS prefix matching", async () => {
+    db.prepare(
+      "INSERT INTO movies (title, year, type, source) VALUES (?, ?, ?, ?)",
+    ).run("Inception", 2010, "movie", "tmdb");
+    db.prepare(
+      "INSERT INTO movies (title, year, type, source) VALUES (?, ?, ?, ?)",
+    ).run("Interstellar", 2014, "movie", "tmdb");
+
+    const res = await GET(getReq({ q: "incep" }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.map((movie: Movie) => movie.title)).toEqual(["Inception"]);
+  });
+
+  it("searches director, writer, and actor fields", async () => {
+    db.prepare(
+      `INSERT INTO movies (title, year, type, source, director, writer, actors)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      "Oppenheimer",
+      2023,
+      "movie",
+      "tmdb",
+      "Christopher Nolan",
+      "Kai Bird, Martin Sherwin",
+      "Cillian Murphy, Emily Blunt",
+    );
+    db.prepare(
+      `INSERT INTO movies (title, year, type, source, director, writer, actors)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run("Arrival", 2016, "movie", "tmdb", "Denis Villeneuve", null, "Amy Adams");
+
+    const directorRes = await GET(getReq({ q: "villeneuve" }));
+    const writerRes = await GET(getReq({ q: "sherwin" }));
+    const actorRes = await GET(getReq({ q: "cillian" }));
+
+    expect((await directorRes.json()).map((movie: Movie) => movie.title)).toEqual(["Arrival"]);
+    expect((await writerRes.json()).map((movie: Movie) => movie.title)).toEqual(["Oppenheimer"]);
+    expect((await actorRes.json()).map((movie: Movie) => movie.title)).toEqual(["Oppenheimer"]);
+  });
+
+  it("returns no movies for an FTS miss", async () => {
+    db.prepare(
+      "INSERT INTO movies (title, year, type, source) VALUES (?, ?, ?, ?)",
+    ).run("Inception", 2010, "movie", "tmdb");
+
+    const res = await GET(getReq({ q: "notfound" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([]);
+  });
+
+  it("returns no movies when an FTS query has no searchable tokens", async () => {
+    db.prepare(
+      "INSERT INTO movies (title, year, type, source) VALUES (?, ?, ?, ?)",
+    ).run("Inception", 2010, "movie", "tmdb");
+
+    const res = await GET(getReq({ q: "!!!" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([]);
+  });
+
+  it("combines FTS search with type filtering", async () => {
+    db.prepare(
+      "INSERT INTO movies (title, year, type, source, actors) VALUES (?, ?, ?, ?, ?)",
+    ).run("Twin Peaks", 1990, "series", "tmdb", "Kyle MacLachlan");
+    db.prepare(
+      "INSERT INTO movies (title, year, type, source, actors) VALUES (?, ?, ?, ?, ?)",
+    ).run("Blue Velvet", 1986, "movie", "tmdb", "Kyle MacLachlan");
+
+    const res = await GET(getReq({ q: "kyle", type: "series" }));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.map((movie: Movie) => movie.title)).toEqual(["Twin Peaks"]);
+  });
+
+  it("returns no movies when a typed FTS query has no searchable tokens", async () => {
+    db.prepare(
+      "INSERT INTO movies (title, year, type, source, actors) VALUES (?, ?, ?, ?, ?)",
+    ).run("Twin Peaks", 1990, "series", "tmdb", "Kyle MacLachlan");
+    db.prepare(
+      "INSERT INTO movies (title, year, type, source, actors) VALUES (?, ?, ?, ?, ?)",
+    ).run("Blue Velvet", 1986, "movie", "tmdb", "Kyle MacLachlan");
+
+    const res = await GET(getReq({ q: "!!!", type: "series" }));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([]);
   });
 });
 

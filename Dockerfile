@@ -1,3 +1,4 @@
+# tamtam inspected 2026-05-21
 FROM node:24-alpine AS base
 
 # Install pnpm
@@ -6,7 +7,7 @@ RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
 # --- Dependencies ---
 FROM base AS deps
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 # --- Build ---

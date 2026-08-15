@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 import Database from "better-sqlite3";
@@ -389,6 +390,133 @@ describe("import API route", () => {
 
     const stored = getSetting(db, "library_path");
     expect(stored).toBe("/movies/library");
+  });
+
+  // ── Pathless-row linking ────────────────────────────────────────────────────
+
+  it("links a metadata-poor pathless row and enriches it from TMDb", async () => {
+    // Pre-insert a pathless Filmweb row (no file_path, no TMDb metadata)
+    db.prepare(
+      "INSERT INTO movies (title, year, source, type) VALUES ('Inception', 2010, 'filmweb', 'movie')",
+    ).run();
+
+    vi.mocked(scanDirectoryGenerator).mockReturnValue(
+      (function* () {
+        yield {
+          filePath: "/movies/Inception (2010)/inception.mkv",
+          filename: "inception.mkv",
+          parsedTitle: "Inception",
+          parsedYear: 2010,
+        };
+      })() as ReturnType<typeof scanDirectoryGenerator>,
+    );
+
+    vi.mocked(searchTmdb).mockResolvedValue([
+      {
+        title: "Inception",
+        year: 2010,
+        genre: "Sci-Fi",
+        rating: 8.4,
+        poster_url: "https://image.tmdb.org/t/p/w300/inception.jpg",
+        tmdb_id: 27205,
+        imdb_id: null,
+      },
+    ]);
+
+    const res = await POST(makeRequest({ path: "/movies" }));
+    const lines = await readNDJSON(res);
+    const complete = lines.find((l) => l.type === "complete");
+
+    expect(complete!.linked).toBe(1);
+    expect(complete!.added).toBe(0);
+    expect(complete!.skipped).toBe(0);
+    // The row was missing genre/rating/poster/tmdb_id, so TMDb is consulted to fill them.
+    expect(searchTmdb).toHaveBeenCalled();
+
+    const row = db
+      .prepare(
+        "SELECT file_path, genre, rating, poster_url, tmdb_id FROM movies WHERE title = 'Inception'",
+      )
+      .get() as {
+      file_path: string;
+      genre: string | null;
+      rating: number | null;
+      poster_url: string | null;
+      tmdb_id: number | null;
+    };
+    expect(row.file_path).toBe("/movies/Inception (2010)/inception.mkv");
+    expect(row.genre).toBe("Sci-Fi");
+    expect(row.rating).toBe(8.4);
+    expect(row.tmdb_id).toBe(27205);
+  });
+
+  it("does not call TMDb when the linked pathless row already has full metadata", async () => {
+    // Enrichment must converge: a row that already carries every field the TMDb
+    // search can supply is linked on the fast path and never re-queried.
+    db.prepare(
+      "INSERT INTO movies (title, year, source, type, genre, rating, poster_url, tmdb_id) VALUES ('Inception', 2010, 'filmweb', 'movie', 'Sci-Fi', 8.4, 'https://image.tmdb.org/t/p/w300/inception.jpg', 27205)",
+    ).run();
+
+    vi.mocked(scanDirectoryGenerator).mockReturnValue(
+      (function* () {
+        yield {
+          filePath: "/movies/Inception (2010)/inception.mkv",
+          filename: "inception.mkv",
+          parsedTitle: "Inception",
+          parsedYear: 2010,
+        };
+      })() as ReturnType<typeof scanDirectoryGenerator>,
+    );
+
+    const res = await POST(makeRequest({ path: "/movies" }));
+    const lines = await readNDJSON(res);
+    const complete = lines.find((l) => l.type === "complete");
+
+    expect(complete!.linked).toBe(1);
+    expect(complete!.added).toBe(0);
+    expect(searchTmdb).not.toHaveBeenCalled();
+
+    const row = db
+      .prepare("SELECT file_path FROM movies WHERE title = 'Inception'")
+      .get() as { file_path: string };
+    expect(row.file_path).toBe("/movies/Inception (2010)/inception.mkv");
+  });
+
+  it("counts linked=1 when a pathless row matches by tmdb_id returned from TMDb", async () => {
+    // Pre-insert a pathless row with a tmdb_id (e.g., from wishlist)
+    db.prepare(
+      "INSERT INTO movies (title, year, source, tmdb_id, type) VALUES ('Dune', 2021, 'filmweb', 438631, 'movie')",
+    ).run();
+
+    vi.mocked(scanDirectoryGenerator).mockReturnValue(
+      (function* () {
+        yield {
+          filePath: "/movies/Dune Part One/dune.mkv",
+          filename: "dune.mkv",
+          parsedTitle: "Dune",
+          parsedYear: 2022,
+        };
+      })() as ReturnType<typeof scanDirectoryGenerator>,
+    );
+
+    vi.mocked(searchTmdb).mockResolvedValue([
+      {
+        title: "Dune: Part One",
+        year: 2021,
+        genre: "Sci-Fi",
+        rating: 8.0,
+        poster_url: null,
+        tmdb_id: 438631,
+        imdb_id: null,
+      },
+    ]);
+
+    const res = await POST(makeRequest({ path: "/movies" }));
+    const lines = await readNDJSON(res);
+    const complete = lines.find((l) => l.type === "complete");
+
+    expect(complete!.linked).toBe(1);
+    expect(complete!.added).toBe(0);
   });
 
   // ── Multi-file summary ──────────────────────────────────────────────────────

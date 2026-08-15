@@ -12,17 +12,26 @@ import {
   getRecommendedMovies,
   getSetting,
   insertMovie,
+  recordImpressions,
 } from "@/lib/db";
 import {
   engines,
   buildContext,
   getCdaLookup,
   enrichWithCda,
+  overrideTraceSource,
   type RecommendationGroup,
   type RecConfig,
 } from "@/lib/engines";
+import { rateLimit } from "@/lib/rate-limit";
+
+// Engines that re-rank on prior impressions via getImpressionCounts. Recording
+// impressions for engines that never read them would accumulate dead rows.
+const ROTATION_AWARE_ENGINES = new Set(["hidden_gem"]);
 
 export async function GET(request: NextRequest) {
+  const limited = rateLimit(request, "tmdb");
+  if (limited) return limited;
   const db = getDb();
   const engineKey = request.nextUrl.searchParams.get("engine") || "all";
   const refresh = request.nextUrl.searchParams.get("refresh") === "true";
@@ -138,19 +147,40 @@ export async function GET(request: NextRequest) {
         return addCdaUrls(filterExcluded(await def.engine(ctx), { skipRated: true }));
       }
 
-      if (refresh) clearCachedEngine(db, key);
+      const ctx = buildContext(movies, dismissedIds, config);
+      const cacheKey = def.cacheKey?.(ctx) ?? key;
+      const cacheMovieCount = def.cacheKey ? 0 : movieCount;
+      const cacheMaxAgeHours = def.cacheMaxAgeHours ?? 24;
 
-      const cached = getCachedEngine(db, key, movieCount);
-      if (cached) {
+      if (refresh) {
+        clearCachedEngine(db, key);
+        if (cacheKey !== key) clearCachedEngine(db, cacheKey);
+      }
+
+      const cached = getCachedEngine(
+        db,
+        cacheKey,
+        cacheMovieCount,
+        cacheMaxAgeHours,
+      );
+      if (cached && (def.cacheEmptyResults !== false || cached.length > 0)) {
         return addCdaUrls(
-          filterExcluded(enrichFromDb(cached as RecommendationGroup[], key)),
+          filterExcluded(
+            overrideTraceSource(
+              enrichFromDb(cached as RecommendationGroup[], key),
+              "recommendation_cache",
+            ),
+          ),
         );
       }
 
-      const ctx = buildContext(movies, dismissedIds, config);
       const groups = await def.engine(ctx);
-      setCachedEngine(db, key, groups, movieCount);
-      persistResults(groups);
+      if (def.cacheEmptyResults !== false || groups.length > 0) {
+        setCachedEngine(db, cacheKey, groups, cacheMovieCount);
+      }
+      if (groups.length > 0) {
+        persistResults(groups);
+      }
       return addCdaUrls(filterExcluded(groups));
     } catch (err) {
       console.error(`[Recommendations] engine "${key}" failed:`, err);
@@ -168,13 +198,32 @@ export async function GET(request: NextRequest) {
     }));
   }
 
+  function recordImpressionsForGroups(groups: RecommendationGroup[]): void {
+    const byEngine = new Map<string, number[]>();
+    for (const g of groups) {
+      if (!ROTATION_AWARE_ENGINES.has(g.type)) continue;
+      const ids = byEngine.get(g.type) ?? [];
+      for (const r of g.recommendations) ids.push(r.tmdb_id);
+      byEngine.set(g.type, ids);
+    }
+    for (const [engine, ids] of byEngine) {
+      try {
+        recordImpressions(db, engine, ids);
+      } catch (err) {
+        console.error(`[Recommendations] recordImpressions failed for "${engine}":`, err);
+      }
+    }
+  }
+
   // Single engine request
   if (engineKey !== "all" && engines[engineKey]) {
     if (disabledEngines.includes(engineKey)) {
       return Response.json([]);
     }
     const groups = await runEngine(engineKey, engines[engineKey]);
-    return Response.json(applyMaxPerGroup(groups));
+    const final = applyMaxPerGroup(groups);
+    recordImpressionsForGroups(final);
+    return Response.json(final);
   }
 
   // All engines
@@ -185,5 +234,7 @@ export async function GET(request: NextRequest) {
     allGroups.push(...groups);
   }
 
-  return Response.json(applyMaxPerGroup(allGroups));
+  const final = applyMaxPerGroup(allGroups);
+  recordImpressionsForGroups(final);
+  return Response.json(final);
 }

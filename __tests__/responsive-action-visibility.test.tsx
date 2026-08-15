@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 import type { ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
@@ -13,11 +14,11 @@ import type { Movie, RecommendationGroup } from "@/lib/types";
 import type { TmdbSearchResult } from "@/lib/tmdb";
 
 const HOVER_REVEAL_REC_CLASS =
-  "hidden flex-col gap-1 opacity-0 transition-all duration-200 [@media(hover:hover)]:flex [@media(hover:hover)]:group-hover/rec:opacity-100";
+  "pointer-events-none hidden flex-col gap-1 opacity-0 transition-all duration-200 [@media(hover:hover)]:flex [@media(hover:hover)]:group-hover/rec:pointer-events-auto [@media(hover:hover)]:group-hover/rec:opacity-100";
 const HOVER_REVEAL_WISH_CLASS =
-  "[@media(hover:hover)]:group-hover/wish:opacity-100";
+  "[@media(hover:hover)]:group-hover/wish:pointer-events-auto [@media(hover:hover)]:group-hover/wish:opacity-100";
 const HOVER_REVEAL_LIBRARY_CLASS =
-  "hidden flex-col gap-1 opacity-0 transition-all duration-200 [@media(hover:hover)]:flex [@media(hover:hover)]:group-hover:opacity-100";
+  "pointer-events-none hidden flex-col gap-1 opacity-0 transition-all duration-200 [@media(hover:hover)]:flex [@media(hover:hover)]:group-hover:pointer-events-auto [@media(hover:hover)]:group-hover:opacity-100";
 
 const rec: TmdbSearchResult = {
   title: "Heat",
@@ -27,6 +28,17 @@ const rec: TmdbSearchResult = {
   poster_url: null,
   tmdb_id: 949,
   imdb_id: "tt0113277",
+};
+
+const tracedRec: TmdbSearchResult = {
+  ...rec,
+  trace: {
+    engine: "movie",
+    source: "live_tmdb",
+    seedKind: "movie",
+    seedTmdbId: 27205,
+    seedTitle: "Inception",
+  },
 };
 
 const moodGroups: RecommendationGroup[] = [
@@ -110,6 +122,23 @@ describe("responsive action visibility", () => {
     expect(html).toContain(HOVER_REVEAL_REC_CLASS);
     expect(html).toContain("Show actions");
     expect(html).not.toContain("md:[@media(hover:hover)]");
+  });
+
+  it("keeps trace controls away from grouped recommendation rating badges", () => {
+    const html = renderToStaticMarkup(
+      <RecommendationRow
+        reason="Because you liked crime"
+        type="movie"
+        recommendations={[tracedRec]}
+        onAction={vi.fn()}
+        onClickMovie={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain("Trace");
+    expect(html).toContain("★ 8.3");
+    expect(html).toContain("absolute right-2 top-2 z-20");
+    expect(html).not.toContain("absolute left-2 top-2 z-20");
   });
 
   it("keeps mood recommendation actions hover-gated by input capability instead of md width", () => {

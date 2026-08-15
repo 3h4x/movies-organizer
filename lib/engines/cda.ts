@@ -2,6 +2,7 @@ import { getDb, getRecommendedMovies, getDismissedIds } from "../db";
 import { normalizeTitle, type EngineContext, type RecommendationGroup } from "./index";
 import type { TmdbSearchResult } from "../tmdb";
 import { parseGenreLabels } from "../utils";
+import { isCdaLinkDead } from "../cda-health";
 
 export async function cdaEngine(
   ctx: EngineContext,
@@ -25,16 +26,15 @@ export async function cdaEngine(
     }
   }
 
-  const libraryTitles = new Set([...ctx.libraryTitles]);
-
   // Group by TMDb genre, sorted by user preference
   const genreGroups = new Map<string, TmdbSearchResult[]>();
 
   for (const m of cdaMovies) {
+    if (isCdaLinkDead(m.cda_last_status)) continue;
     if (dismissedIds.has(m.tmdb_id)) continue;
     if (ctx.libraryTmdbIds.has(m.tmdb_id)) continue;
-    if (libraryTitles.has(normalizeTitle(m.title))) continue;
-    if (m.pl_title && libraryTitles.has(normalizeTitle(m.pl_title))) continue;
+    if (ctx.libraryTitles.has(normalizeTitle(m.title))) continue;
+    if (m.pl_title && ctx.libraryTitles.has(normalizeTitle(m.pl_title))) continue;
 
     const genres = m.genre ? parseGenreLabels(m.genre) : ["Other"];
 
@@ -50,6 +50,12 @@ export async function cdaEngine(
       tmdb_id: m.tmdb_id,
       imdb_id: null,
       cda_url: m.cda_url || undefined,
+      trace: m.trace ?? {
+        engine: "cda",
+        source: "recommended_movies",
+        seedKind: "cda",
+        seedName: primaryGenre,
+      },
     });
   }
 
@@ -61,13 +67,13 @@ export async function cdaEngine(
     return a.localeCompare(b);
   });
 
-  return sortedGenres
-    .filter((genre) => (genreGroups.get(genre)?.length || 0) > 0)
-    .map((genre) => ({
-      reason: `${genre} on CDA`,
-      type: "cda" as const,
-      recommendations: genreGroups
-        .get(genre)!
-        .sort((a, b) => (b.rating || 0) - (a.rating || 0)),
-    }));
+  // Every key in genreGroups was created alongside a push above, so each array
+  // is guaranteed non-empty — no need to filter empty groups here.
+  return sortedGenres.map((genre) => ({
+    reason: `${genre} on CDA`,
+    type: "cda" as const,
+    recommendations: genreGroups
+      .get(genre)!
+      .sort((a, b) => (b.rating || 0) - (a.rating || 0)),
+  }));
 }

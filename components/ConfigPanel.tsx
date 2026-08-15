@@ -2,7 +2,10 @@
 
 import { useState, useEffect, useRef, type FormEvent } from "react";
 import { EPG_PRESETS } from "@/lib/epg-presets";
+import type { TmdbHealthSnapshot } from "@/lib/tmdb-health";
 import type { RecConfig } from "@/lib/types";
+import type { Movie } from "@/lib/db";
+import Button from "@/components/ui/Button";
 
 export type { RecConfig };
 
@@ -49,8 +52,10 @@ interface ConfigPanelProps {
   engines: { value: string; label: string }[];
   onToggleEngine: (engineKey: string) => void;
   libraryPath: string | null;
-  onSaveLibraryPath: (path: string) => Promise<void>;
+  onSaveLibraryPath: (path: string) => Promise<boolean>;
   onSync: () => void;
+  onOpenMovie: (id: number) => void;
+  addToast: (message: string, variant?: "default" | "success") => void;
 }
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
@@ -71,6 +76,13 @@ function Hint({ children }: { children: React.ReactNode }) {
   return <p className="text-gray-500 text-xs mb-3">{children}</p>;
 }
 
+const PILL_ACTIVE_CLASS = {
+  indigo: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
+  yellow: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
+  green: "bg-green-500/20 text-green-300 border-green-500/30",
+  red: "bg-red-500/20 text-red-300 border-red-500/30",
+} as const;
+
 function PillButton({
   active,
   onClick,
@@ -82,12 +94,7 @@ function PillButton({
   children: React.ReactNode;
   color?: "indigo" | "yellow" | "green" | "red";
 }) {
-  const activeClass = {
-    indigo: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
-    yellow: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
-    green: "bg-green-500/20 text-green-300 border-green-500/30",
-    red: "bg-red-500/20 text-red-300 border-red-500/30",
-  }[color];
+  const activeClass = PILL_ACTIVE_CLASS[color];
   return (
     <button
       onClick={onClick}
@@ -125,6 +132,8 @@ export default function ConfigPanel({
   libraryPath,
   onSaveLibraryPath,
   onSync,
+  onOpenMovie,
+  addToast,
 }: ConfigPanelProps) {
   const [activeTab, setActiveTab] = useState<ConfigTab>("library");
   const tabsRef = useRef<HTMLDivElement | null>(null);
@@ -144,6 +153,9 @@ export default function ConfigPanel({
   const [cdaStatus, setCdaStatus] = useState<"idle" | "running" | "error">("idle");
   const [cdaLastRefresh, setCdaLastRefresh] = useState<string | null>(null);
   const [cdaMovieCount, setCdaMovieCount] = useState<number | null>(null);
+  const [cdaDeadCount, setCdaDeadCount] = useState<number | null>(null);
+  const [tmdbHealth, setTmdbHealth] = useState<TmdbHealthSnapshot | null>(null);
+  const [tmdbRefreshState, setTmdbRefreshState] = useState<"idle" | "running">("idle");
 
   // EPG / TV
   const [tvHideUnrated, setTvHideUnrated] = useState(true);
@@ -154,6 +166,10 @@ export default function ConfigPanel({
   const [epgLastRefresh, setEpgLastRefresh] = useState<string | null>(null);
   const [epgUrlSaving, setEpgUrlSaving] = useState(false);
   const [blacklist, setBlacklist] = useState<string[]>([]);
+  const [detachedMovies, setDetachedMovies] = useState<Movie[]>([]);
+  const [detachedLoaded, setDetachedLoaded] = useState(false);
+  const [detachedVisibleCount, setDetachedVisibleCount] = useState(100);
+  const [deletingIds, setDeletingIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     setDraft({ ...DEFAULTS, ...config });
@@ -162,6 +178,34 @@ export default function ConfigPanel({
 
   useEffect(() => { setApiKeySource(tmdbKeySource); }, [tmdbKeySource]);
   useEffect(() => { setPathDraft(libraryPath || ""); }, [libraryPath]);
+
+  useEffect(() => {
+    if (activeTab !== "library" || detachedLoaded) return;
+    setDetachedLoaded(true);
+    fetch("/api/movies?detached=1")
+      .then((r) => r.json())
+      .then((movies: Movie[]) => {
+        setDetachedMovies(movies);
+        setDetachedVisibleCount(100);
+      })
+      .catch(() => {});
+  }, [activeTab, detachedLoaded]);
+
+  async function handleDeleteDetached(id: number) {
+    setDeletingIds((prev) => new Set(prev).add(id));
+    try {
+      const res = await fetch(`/api/movies/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setDetachedMovies((prev) => prev.filter((m) => m.id !== id));
+      }
+    } finally {
+      setDeletingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  }
 
   useEffect(() => {
     fetch("/api/backup").then((r) => r.json()).then(setBackupStats);
@@ -173,6 +217,7 @@ export default function ConfigPanel({
         setCdaStatus(s.cda_refresh_status ?? "idle");
         setCdaLastRefresh(s.cda_last_refresh ?? null);
         setCdaMovieCount(s.cda_movie_count ?? null);
+        setCdaDeadCount(s.cda_dead_link_count ?? null);
         setTvHideUnrated(s.tv_hide_unrated ?? true);
         setEpgEnabled(s.epg_enabled ?? true);
         setEpgUrlDraft(s.epg_url ?? "");
@@ -185,6 +230,33 @@ export default function ConfigPanel({
       .then((list: string[]) => setBlacklist(list))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== "integrations") return;
+
+    let cancelled = false;
+
+    async function loadTmdbHealth() {
+      try {
+        const res = await fetch("/api/tmdb-health");
+        if (!res.ok) return;
+        const data = (await res.json()) as TmdbHealthSnapshot;
+        if (!cancelled) setTmdbHealth(data);
+      } catch {
+        // Keep config usable even if the process-local debug endpoint is unavailable.
+      }
+    }
+
+    void loadTmdbHealth();
+    const timer = setInterval(() => {
+      void loadTmdbHealth();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [activeTab]);
 
   useEffect(() => {
     if (cdaStatus !== "running") return;
@@ -260,9 +332,11 @@ export default function ConfigPanel({
   }
 
   async function handleSavePath() {
+    setPathSaved(false);
     setPathSaving(true);
-    await onSaveLibraryPath(pathDraft.trim());
+    const saved = await onSaveLibraryPath(pathDraft.trim());
     setPathSaving(false);
+    if (!saved) return;
     setPathSaved(true);
     setTimeout(() => setPathSaved(false), 2000);
   }
@@ -291,20 +365,58 @@ export default function ConfigPanel({
 
   async function saveApiKey(value: string) {
     setApiKeySaving(true);
-    await fetch("/api/settings", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tmdb_api_key: value }),
-    });
-    setApiKeySource(value.trim() ? "db" : null);
-    setApiKey("");
-    setApiKeySaving(false);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tmdb_api_key: value }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        addToast(data.error || "Failed to save TMDb API key");
+        return;
+      }
+      setApiKeySource(value.trim() ? "db" : null);
+      setApiKey("");
+    } catch {
+      addToast("Failed to save TMDb API key");
+    } finally {
+      setApiKeySaving(false);
+    }
   }
 
   function handleApiKeySubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!shouldSubmitApiKey(apiKey, apiKeySaving)) return;
     void saveApiKey(apiKey);
+  }
+
+  async function handleRefreshStaleMetadata() {
+    setTmdbRefreshState("running");
+    try {
+      const res = await fetch("/api/movies/refresh-stale", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        updated?: number;
+        skipped?: number;
+        error?: string;
+      };
+      if (!res.ok) {
+        addToast(data.error || "Failed to refresh stale metadata");
+        return;
+      }
+      addToast(
+        `Metadata refreshed: ${data.updated ?? 0} updated, ${data.skipped ?? 0} skipped`,
+        "success",
+      );
+    } catch {
+      addToast("Failed to refresh stale metadata");
+    } finally {
+      setTmdbRefreshState("idle");
+    }
   }
 
   return (
@@ -314,6 +426,7 @@ export default function ConfigPanel({
       <div className="relative">
         <div
           ref={tabsRef}
+          data-testid="config-tab-strip"
           className="flex gap-1 bg-gray-800/40 p-1 rounded-xl overflow-x-auto pr-10 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
         >
         {CONFIG_TABS.map((tab) => (
@@ -353,13 +466,13 @@ export default function ConfigPanel({
                 placeholder="/Volumes/video/Movies"
                 className="h-11 flex-1 min-w-0 rounded-lg border border-gray-700/30 bg-gray-800/60 px-3 text-sm font-mono text-white placeholder-gray-600 focus:border-indigo-500/50 focus:outline-none"
               />
-              <button
+              <Button
                 onClick={handleSavePath}
                 disabled={pathSaving || !pathDraft.trim() || pathDraft.trim() === libraryPath}
-                className="min-h-11 shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+                className="min-h-11 shrink-0 rounded-lg px-4 py-2 text-sm"
               >
                 {pathSaving ? "Saving..." : pathSaved ? "Saved" : "Save"}
-              </button>
+              </Button>
               {libraryPath && (
                 <button
                   onClick={onSync}
@@ -424,6 +537,76 @@ export default function ConfigPanel({
             )}
           </section>
 
+          <section>
+            <SubHeader>Detached Files</SubHeader>
+            <Hint>Movies in your library with no local file. Open the detail to relink, or delete the record.</Hint>
+            {detachedMovies.length === 0 ? (
+              <p className="text-gray-700 text-sm">No detached movies.</p>
+            ) : (
+              <div className="space-y-3">
+                <p className="text-xs text-gray-500">
+                  Showing {Math.min(detachedVisibleCount, detachedMovies.length)} of {detachedMovies.length}
+                </p>
+                <div className="space-y-1.5">
+                  {detachedMovies.slice(0, detachedVisibleCount).map((m) => (
+                    <div
+                      key={m.id}
+                      className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-gray-800/30 border border-gray-700/30"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="text-gray-300 text-sm font-medium truncate">
+                          {m.pl_title || m.title}
+                          {m.year ? <span className="text-gray-500 font-normal ml-1">({m.year})</span> : null}
+                        </p>
+                        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                          {m.user_rating != null && (
+                            <span className="text-xs text-indigo-400">♥ {m.user_rating}</span>
+                          )}
+                          {m.wishlist === 1 && (
+                            <span className="text-xs text-yellow-400">Wishlist</span>
+                          )}
+                          {m.tmdb_id != null && (
+                            <span className="text-xs text-gray-600">TMDb</span>
+                          )}
+                          {m.filmweb_id != null && (
+                            <span className="text-xs text-gray-600">Filmweb</span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => onOpenMovie(m.id)}
+                          className="flex min-h-11 items-center rounded-lg px-3 text-xs text-indigo-400 transition-colors hover:bg-white/5 hover:text-indigo-300"
+                        >
+                          Open
+                        </button>
+                        <button
+                          disabled={deletingIds.has(m.id)}
+                          onClick={() => void handleDeleteDetached(m.id)}
+                          className="flex min-h-11 items-center rounded-lg px-3 text-xs text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"
+                        >
+                          {deletingIds.has(m.id) ? "Deleting…" : "Delete"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {detachedVisibleCount < detachedMovies.length && (
+                  <button
+                    onClick={() =>
+                      setDetachedVisibleCount((prev) =>
+                        Math.min(prev + 100, detachedMovies.length),
+                      )
+                    }
+                    className="min-h-11 rounded-lg bg-gray-800/50 px-4 py-2 text-sm text-gray-300 transition-colors hover:bg-gray-700/60 hover:text-white"
+                  >
+                    Load 100 More
+                  </button>
+                )}
+              </div>
+            )}
+          </section>
+
         </div>
       </div>}
 
@@ -445,7 +628,7 @@ export default function ConfigPanel({
               )}
             </Hint>
             {apiKeySource !== "env" && (
-              <form className="flex items-center gap-2" onSubmit={handleApiKeySubmit}>
+              <form className="flex flex-wrap items-center gap-2" onSubmit={handleApiKeySubmit}>
                 <input
                   type="text"
                   name="tmdb-username"
@@ -466,26 +649,112 @@ export default function ConfigPanel({
                   placeholder={apiKeySource === "db" ? "••••••••  (replace)" : "Paste TMDb read access token"}
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  className="h-11 flex-1 rounded-lg border border-gray-700/30 bg-gray-800/60 px-3 text-sm text-white focus:border-indigo-500/50 focus:outline-none"
+                  className="h-11 min-w-0 flex-[1_1_14rem] rounded-lg border border-gray-700/30 bg-gray-800/60 px-3 text-sm text-white focus:border-indigo-500/50 focus:outline-none"
                 />
-                <button
+                <Button
                   type="submit"
                   disabled={!apiKey.trim() || apiKeySaving}
-                  className="min-h-11 rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="min-h-11 shrink-0 rounded-lg px-4 py-2 text-sm"
                 >
                   {apiKeySaving ? "Saving..." : "Save"}
-                </button>
+                </Button>
                 {apiKeySource === "db" && (
                   <button
                     type="button"
                     onClick={() => { void saveApiKey(""); }}
-                    className="min-h-11 rounded-lg bg-red-600/20 px-3 py-2 text-sm text-red-300 transition-colors hover:bg-red-600/30"
+                    className="min-h-11 shrink-0 rounded-lg bg-red-600/20 px-3 py-2 text-sm text-red-300 transition-colors hover:bg-red-600/30"
                   >
                     Remove
                   </button>
                 )}
               </form>
             )}
+          </section>
+
+          <section>
+            <SubHeader>TMDb Request Pressure</SubHeader>
+            <Hint>Process-local counters for this running app instance. They reset on restart.</Hint>
+            <div className="mb-3">
+              <button
+                disabled={tmdbRefreshState === "running"}
+                onClick={() => void handleRefreshStaleMetadata()}
+                className="min-h-11 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-gray-300 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {tmdbRefreshState === "running" ? "Refreshing…" : "Refresh Stale Metadata"}
+              </button>
+            </div>
+            <div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-lg border border-white/10 bg-black/10 p-3">
+                  <p className="text-[11px] uppercase tracking-widest text-gray-500">Live requests</p>
+                  <p className="mt-1 text-lg font-semibold text-white">
+                    {tmdbHealth?.liveRequestCount ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-black/10 p-3">
+                  <p className="text-[11px] uppercase tracking-widest text-gray-500">Cache hits</p>
+                  <p className="mt-1 text-lg font-semibold text-white">
+                    {tmdbHealth?.cacheHitCount ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-black/10 p-3">
+                  <p className="text-[11px] uppercase tracking-widest text-gray-500">Retries</p>
+                  <p className="mt-1 text-lg font-semibold text-white">
+                    {tmdbHealth?.retryCount ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-black/10 p-3">
+                  <p className="text-[11px] uppercase tracking-widest text-gray-500">Non-OK responses</p>
+                  <p className="mt-1 text-lg font-semibold text-white">
+                    {tmdbHealth?.nonOkCount ?? 0}
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-xs text-gray-500 space-y-1">
+                <p>
+                  Last error status:{" "}
+                  <span className="text-gray-300">
+                    {tmdbHealth?.lastErrorStatus ?? "None"}
+                  </span>
+                </p>
+                <p>
+                  Last error:{" "}
+                  <span className="text-gray-300">
+                    {tmdbHealth?.lastErrorMessage ?? "None"}
+                  </span>
+                </p>
+                <p>
+                  Last 429:{" "}
+                  <span className="text-gray-300">
+                    {tmdbHealth?.last429At ? new Date(tmdbHealth.last429At).toLocaleString() : "Never"}
+                  </span>
+                </p>
+              </div>
+
+              <div>
+                <p className="mb-2 text-[11px] uppercase tracking-widest text-gray-500">By helper</p>
+                {tmdbHealth && Object.keys(tmdbHealth.helpers).length > 0 ? (
+                  <div className="space-y-2">
+                    {Object.entries(tmdbHealth.helpers)
+                      .sort(([a], [b]) => a.localeCompare(b))
+                      .map(([helper, stats]) => (
+                        <div
+                          key={helper}
+                          className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-xs text-gray-400"
+                        >
+                          <p className="font-mono text-gray-200">{helper}</p>
+                          <p className="mt-1">
+                            requests {stats.liveRequestCount} · cache hits {stats.cacheHitCount} · retries {stats.retryCount} · non-OK {stats.nonOkCount}
+                          </p>
+                        </div>
+                      ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-600">No TMDb requests recorded in this process yet.</p>
+                )}
+              </div>
+            </div>
           </section>
 
           <section>
@@ -540,6 +809,9 @@ export default function ConfigPanel({
                 </p>
                 {cdaMovieCount !== null && (
                   <p>Movies: <span className="text-gray-400">{cdaMovieCount.toLocaleString()}</span></p>
+                )}
+                {cdaDeadCount !== null && cdaDeadCount > 0 && (
+                  <p>Dead links hidden: <span className="text-gray-400">{cdaDeadCount.toLocaleString()}</span></p>
                 )}
               </div>
             </div>
@@ -606,7 +878,7 @@ export default function ConfigPanel({
                     placeholder="https://epgshare01.online/epgshare01/epg_ripper_PL1.xml.gz"
                     className="h-11 min-w-0 flex-1 rounded-lg border border-gray-700/30 bg-gray-800/60 px-3 text-sm font-mono text-white placeholder-gray-600 focus:border-indigo-500/50 focus:outline-none"
                   />
-                  <button
+                  <Button
                     disabled={epgUrlSaving}
                     onClick={async () => {
                       setEpgUrlSaving(true);
@@ -617,10 +889,10 @@ export default function ConfigPanel({
                       });
                       setEpgUrlSaving(false);
                     }}
-                    className="min-h-11 shrink-0 rounded-lg bg-indigo-600 px-4 py-2 text-sm text-white transition-colors hover:bg-indigo-500 disabled:opacity-40"
+                    className="min-h-11 shrink-0 rounded-lg px-4 py-2 text-sm"
                   >
                     {epgUrlSaving ? "Saving…" : "Save"}
-                  </button>
+                  </Button>
                 </div>
                 {!epgUrl && (
                   <p className="text-gray-600 text-xs mt-1">Using default: Poland</p>
@@ -652,7 +924,7 @@ export default function ConfigPanel({
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <button
                   disabled={epgStatus === "running"}
                   onClick={async () => {
@@ -718,7 +990,7 @@ export default function ConfigPanel({
                     });
                     setBlacklist([]);
                   }}
-                  className="text-xs text-gray-600 hover:text-gray-400 transition-colors"
+                  className="min-h-11 rounded-lg px-3 text-xs text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-gray-400"
                 >
                   Clear all
                 </button>
@@ -730,8 +1002,8 @@ export default function ConfigPanel({
             ) : (
               <div className="space-y-1.5">
                 {blacklist.map((id) => (
-                  <div key={id} className="flex items-center justify-between px-3 py-2 rounded-lg bg-gray-800/30 border border-gray-700/30">
-                    <span className="text-gray-400 text-sm font-mono text-xs">{id}</span>
+                  <div key={id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-gray-800/30 border border-gray-700/30">
+                    <span className="min-w-0 break-all text-gray-400 font-mono text-xs">{id}</span>
                     <button
                       onClick={async () => {
                         const next = blacklist.filter((x) => x !== id);
@@ -742,7 +1014,7 @@ export default function ConfigPanel({
                         });
                         setBlacklist(next);
                       }}
-                      className="text-xs text-gray-600 hover:text-gray-300 transition-colors px-2 py-0.5 rounded hover:bg-white/[0.05]"
+                      className="min-h-11 shrink-0 rounded-lg px-3 text-xs text-gray-600 transition-colors hover:bg-white/[0.05] hover:text-gray-300"
                     >
                       Unhide
                     </button>
@@ -771,7 +1043,7 @@ export default function ConfigPanel({
                   <button
                     key={eng.value}
                     onClick={() => onToggleEngine(eng.value)}
-                    className={`text-xs px-3 py-1.5 rounded-lg transition-all border ${
+                    className={`min-h-11 rounded-lg border px-3 py-2 text-xs transition-all ${
                       disabled
                         ? "bg-red-500/20 text-red-300 border-red-500/30"
                         : "bg-green-500/20 text-green-300 border-green-500/30"
@@ -803,7 +1075,7 @@ export default function ConfigPanel({
                           : [...draft.excluded_genres, "Animation"],
                       });
                     }}
-                    className={`text-xs px-3 py-1.5 rounded-lg transition-all border font-medium ${
+                    className={`min-h-11 rounded-lg border px-3 py-2 text-xs font-medium transition-all ${
                       draft.excluded_genres.includes("Animation")
                         ? "bg-orange-500/20 text-orange-300 border-orange-500/30"
                         : "bg-white/5 text-gray-400 border-white/10 hover:bg-white/10 hover:text-gray-300"
@@ -819,7 +1091,7 @@ export default function ConfigPanel({
                       <button
                         key={genre}
                         onClick={() => toggleGenre(genre)}
-                        className={`text-xs px-3 py-1.5 rounded-lg transition-all border ${
+                        className={`min-h-11 rounded-lg border px-3 py-2 text-xs transition-all ${
                           excluded
                             ? "bg-red-500/20 text-red-300 border-red-500/30"
                             : "bg-gray-800/60 text-gray-400 border-gray-700/30 hover:border-gray-600/50 hover:text-gray-300"
@@ -970,7 +1242,7 @@ export default function ConfigPanel({
                   </Hint>
                   <button
                     onClick={() => update({ use_tmdb_similar: !draft.use_tmdb_similar })}
-                    className={`px-4 py-2 text-sm rounded-lg transition-colors border ${
+                    className={`min-h-11 rounded-lg border px-4 py-2 text-sm transition-colors ${
                       draft.use_tmdb_similar
                         ? "bg-green-500/20 text-green-300 border-green-500/30 hover:bg-green-500/30"
                         : "bg-red-500/20 text-red-300 border-red-500/30 hover:bg-red-500/30"
@@ -1046,20 +1318,20 @@ export default function ConfigPanel({
 
           {/* Actions */}
           <div className="flex flex-wrap items-center gap-3 pt-2">
-            <button
+            <Button
               onClick={handleSave}
               disabled={!dirty}
-              className={`px-5 py-2 rounded-lg text-sm font-medium transition-all ${
+              className={`min-h-11 rounded-lg px-5 py-2 text-sm font-medium transition-all ${
                 dirty
-                  ? "bg-indigo-500 text-white hover:bg-indigo-400 shadow-md shadow-indigo-500/20"
-                  : "bg-gray-800/60 text-gray-600 cursor-default"
+                  ? "!bg-indigo-500 text-white hover:!bg-indigo-400 shadow-md shadow-indigo-500/20"
+                  : "disabled:!bg-gray-800/60 disabled:!text-gray-600 disabled:!opacity-100 disabled:!cursor-default"
               }`}
             >
               Save & Refresh Recommendations
-            </button>
+            </Button>
             <button
               onClick={handleReset}
-              className="text-gray-500 hover:text-gray-300 text-sm transition-colors"
+              className="min-h-11 rounded-lg px-3 text-sm text-gray-500 transition-colors hover:bg-white/[0.04] hover:text-gray-300"
             >
               Reset to defaults
             </button>

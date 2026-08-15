@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 import type { Movie } from "@/lib/types";
 
 export interface SearchMatches {
@@ -33,18 +34,27 @@ function compareCanonicalMovies(a: Movie, b: Movie): number {
 }
 
 export function getCanonicalMovie(movies: Movie[]): Movie | undefined {
-  if (movies.length === 0) {
-    return undefined;
+  let best: Movie | undefined;
+  for (const movie of movies) {
+    if (!best || compareCanonicalMovies(movie, best) < 0) {
+      best = movie;
+    }
   }
-
-  return [...movies].sort(compareCanonicalMovies)[0];
+  return best;
 }
 
 export function getCanonicalMatchingMovie(
   movies: Movie[],
   matches: (movie: Movie) => boolean,
 ): Movie | undefined {
-  return getCanonicalMovie(movies.filter(matches));
+  let best: Movie | undefined;
+  for (const movie of movies) {
+    if (!matches(movie)) continue;
+    if (!best || compareCanonicalMovies(movie, best) < 0) {
+      best = movie;
+    }
+  }
+  return best;
 }
 
 export function buildTmdbMovieIndex(movies: Movie[]): Map<number, Movie[]> {
@@ -117,18 +127,17 @@ export function getSearchMatches(
     movie.title.toLowerCase().includes(query) ||
     movie.pl_title?.toLowerCase().includes(query);
 
-  const libraryMatches = movies
-    .filter(
-      (movie) =>
-        (movie.source !== "recommendation" ||
-          (movie.user_rating != null && movie.user_rating > 0)) &&
-        !movie.wishlist,
-    )
-    .filter(matchesQuery);
+  const libraryMatches = movies.filter(
+    (movie) =>
+      (movie.source !== "recommendation" ||
+        (movie.user_rating != null && movie.user_rating > 0)) &&
+      !movie.wishlist &&
+      matchesQuery(movie),
+  );
 
-  const wishlistMatches = movies
-    .filter((movie) => movie.wishlist === 1)
-    .filter(matchesQuery);
+  const wishlistMatches = movies.filter(
+    (movie) => movie.wishlist === 1 && matchesQuery(movie),
+  );
 
   return { libraryMatches, wishlistMatches };
 }

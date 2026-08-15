@@ -1,8 +1,15 @@
 "use client";
+// tamtam inspected 2026-05-21
+import EmptyState from "@/components/ui/EmptyState";
+import Button from "@/components/ui/Button";
 import MovieCard from "@/components/MovieCard";
+import Spinner from "@/components/ui/Spinner";
 import { buildTmdbMovieIndex, getSearchMatches, getTmdbSearchMovieState } from "@/lib/search";
 import type { Movie } from "@/lib/types";
 import type { TmdbSearchResult } from "@/lib/tmdb";
+
+const RESULTS_GRID_CLASS =
+  "grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 
 interface SearchViewProps {
   searchQuery: string;
@@ -40,8 +47,6 @@ export default function SearchView({
     searchQuery,
   );
   const movieIndex = buildTmdbMovieIndex(movies);
-  const resultsGridClassName =
-    "grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6";
 
   return (
     <div>
@@ -60,38 +65,32 @@ export default function SearchView({
 
       {tmdbLoading ? (
         <div className="flex items-center justify-center py-24">
-          <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          <Spinner />
         </div>
       ) : tmdbError === "no_api_key" ? (
-        <div className="text-center py-24">
-          <p className="text-gray-400 text-lg font-medium">
-            TMDb API key not configured
-          </p>
-          <p className="text-gray-600 text-sm mt-2">
-            Add your key in the Config tab to enable search
-          </p>
-          <button
+        <EmptyState
+          message="TMDb API key not configured"
+          subtext="Add your key in the Config tab to enable search"
+        >
+          <Button
             onClick={onGoToConfig}
-            className="mt-5 px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500 transition-colors"
+            className="px-5 py-2 rounded-lg text-sm"
           >
             Go to Config
-          </button>
-        </div>
+          </Button>
+        </EmptyState>
       ) : tmdbError === "error" ? (
-        <div className="text-center py-24">
-          <p className="text-gray-400 text-lg font-medium">
-            TMDb search failed
-          </p>
-          <p className="text-gray-600 text-sm mt-2">
-            Try again in a moment
-          </p>
-          <button
+        <EmptyState
+          message="TMDb search failed"
+          subtext="Try again in a moment"
+        >
+          <Button
             onClick={onSearchTmdb}
-            className="mt-5 px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm hover:bg-indigo-500 transition-colors"
+            className="px-5 py-2 rounded-lg text-sm"
           >
             Search TMDb
-          </button>
-        </div>
+          </Button>
+        </EmptyState>
       ) : (
         <div className="space-y-8">
           {libraryMatches.length > 0 && (
@@ -99,7 +98,7 @@ export default function SearchView({
               <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-3">
                 In your library
               </p>
-              <div className={resultsGridClassName}>
+              <div className={RESULTS_GRID_CLASS}>
                 {libraryMatches.map((m) => (
                   <MovieCard
                     key={m.id}
@@ -122,7 +121,7 @@ export default function SearchView({
               <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-3">
                 In your watchlist
               </p>
-              <div className={resultsGridClassName}>
+              <div className={RESULTS_GRID_CLASS}>
                 {wishlistMatches.map((m) => (
                   <MovieCard
                     key={m.id}
@@ -152,12 +151,12 @@ export default function SearchView({
                     watchlist.
                   </p>
                 </div>
-                <button
+                <Button
                   onClick={onSearchTmdb}
-                  className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+                  className="rounded-xl px-4 py-2 text-sm"
                 >
                   Search TMDb
-                </button>
+                </Button>
               </div>
             </div>
           ) : tmdbResults.length > 0 ? (
@@ -165,7 +164,7 @@ export default function SearchView({
               <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-3">
                 From TMDb
               </p>
-              <div className={resultsGridClassName}>
+              <div className={RESULTS_GRID_CLASS}>
                 {tmdbResults.map((r) => {
                   const { existingMovie, existingLabel } = getTmdbSearchMovieState(
                     movieIndex,
@@ -218,14 +217,15 @@ export default function SearchView({
               <p className="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-3">
                 From TMDb
               </p>
-              <div className="rounded-2xl border border-white/8 bg-white/[0.03] px-5 py-8 text-center">
-                <p className="text-gray-400 text-lg font-medium">
-                  No TMDb results for &ldquo;{searchQuery}&rdquo;
-                </p>
-                <p className="text-gray-600 text-sm mt-2">
-                  Try a different title or check spelling
-                </p>
-              </div>
+              <EmptyState
+                variant="card"
+                message={
+                  <>
+                    No TMDb results for &ldquo;{searchQuery}&rdquo;
+                  </>
+                }
+                subtext="Try a different title or check spelling"
+              />
             </div>
           )}
         </div>

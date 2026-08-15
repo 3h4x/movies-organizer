@@ -1,10 +1,30 @@
-import { test, expect, Page } from "@playwright/test";
-import { MOCK_MOVIES, MOCK_SETTINGS, MOCK_RECS } from "./fixtures";
+// tamtam inspected 2026-05-21
+import { test, expect, Page, Locator } from "@playwright/test";
+import { MOCK_MOVIES, MOCK_POSTER, MOCK_RECS, MOCK_SETTINGS } from "./fixtures";
 
-async function mockAPIs(page: Page) {
+async function mockAPIs(
+  page: Page,
+  movies = MOCK_MOVIES,
+  moodRecommendations = [
+    {
+      reason: "High-energy action for tonight",
+      type: "mood",
+      recommendations: [
+        {
+          tmdb_id: 603,
+          title: "The Matrix",
+          year: 1999,
+          genre: "Action, Science Fiction",
+          rating: 8.7,
+          poster_url: MOCK_POSTER,
+        },
+      ],
+    },
+  ],
+) {
   await page.route("/api/movies", (route) => {
     if (route.request().method() === "GET") {
-      route.fulfill({ json: MOCK_MOVIES });
+      route.fulfill({ json: movies });
     } else {
       route.continue();
     }
@@ -16,27 +36,15 @@ async function mockAPIs(page: Page) {
       route.continue();
     }
   });
+  await page.route("/api/pl-title*", (route) =>
+    route.fulfill({ json: { pl_title: "Ojciec Chrzestny", description: "" } })
+  );
   await page.route("/api/recommendations/count", (route) =>
     route.fulfill({ json: { total: 12 } })
   );
   await page.route("/api/recommendations/mood*", (route) =>
     route.fulfill({
-      json: [
-        {
-          reason: "High-energy action for tonight",
-          type: "mood",
-          recommendations: [
-            {
-              tmdb_id: 603,
-              title: "The Matrix",
-              year: 1999,
-              genre: "Action, Science Fiction",
-              rating: 8.7,
-              poster_url: null,
-            },
-          ],
-        },
-      ],
+      json: moodRecommendations,
     })
   );
   await page.route("/api/recommendations*", (route) =>
@@ -49,6 +57,13 @@ async function goToLibrary(page: Page) {
   // Longer timeout to handle initial Next.js dev compilation
   await page.getByRole("button", { name: /^Library/ }).click();
   await expect(page.getByText("The Godfather")).toBeVisible({ timeout: 20_000 });
+}
+
+async function visibleBox(locator: Locator) {
+  await expect(locator).toBeVisible();
+  const box = await locator.boundingBox();
+  expect(box).not.toBeNull();
+  return box!;
 }
 
 test.describe("page load", () => {
@@ -213,7 +228,7 @@ test.describe("movie detail", () => {
     await goToLibrary(page);
 
     // Click movie card — MovieDetail is rendered as a fixed overlay div
-    await page.getByText("The Godfather").first().click();
+    await page.getByRole("button", { name: "Open The Godfather" }).click();
     // The overlay contains a close button and movie title
     await expect(page.locator(".fixed.inset-0").getByText("The Godfather").first()).toBeVisible({ timeout: 8_000 });
   });
@@ -233,7 +248,7 @@ test.describe("movie detail", () => {
     await page.goto("/");
     await goToLibrary(page);
 
-    await page.getByText("The Godfather").first().click();
+    await page.getByRole("button", { name: "Open The Godfather" }).click();
     const overlay = page.locator(".fixed.inset-0");
     await expect(overlay).toBeVisible({ timeout: 8_000 });
 
@@ -291,7 +306,7 @@ test.describe("movie detail", () => {
             year: 1972,
             genre: "Crime, Drama",
             rating: 9.2,
-            poster_url: null,
+            poster_url: MOCK_POSTER,
             imdb_id: "tt0068646",
           },
         ],
@@ -315,7 +330,7 @@ test.describe("movie detail", () => {
     await page.goto("/");
     await goToLibrary(page);
 
-    await page.getByText("The Godfather").first().click();
+    await page.getByRole("button", { name: "Open The Godfather" }).click();
     const detailOverlay = page.locator(".fixed.inset-0").filter({
       has: page.getByTitle("Management Menu"),
     });
@@ -342,6 +357,253 @@ test.describe("movie detail", () => {
 
     await searchOverlay.locator('[title="Update existing movie"]').click();
     await expect(searchOverlay).not.toBeVisible({ timeout: 5_000 });
+  });
+});
+
+test.describe("mobile regressions", () => {
+  const mobileViewport = { width: 375, height: 812 };
+
+  test.use({
+    viewport: mobileViewport,
+    hasTouch: true,
+    isMobile: true,
+  });
+
+  async function gotoMobile(page: Page, path = "/") {
+    await page.setViewportSize(mobileViewport);
+    await page.goto(path);
+    await expect(page.getByPlaceholder("Search library...")).toBeVisible({
+      timeout: 20_000,
+    });
+  }
+
+  async function mockMovieDetail(page: Page) {
+    await page.route("/api/movies/1/full", (route) =>
+      route.fulfill({
+        json: {
+          movie: { ...MOCK_MOVIES[0] },
+          cast: [],
+          crew: [],
+          similar: [],
+        },
+      }),
+    );
+  }
+
+  test("shows movie title and ratings above the poster in the detail modal", async ({
+    page,
+  }) => {
+    await mockAPIs(page);
+    await mockMovieDetail(page);
+    await gotoMobile(page, "/#movie/238");
+
+    const dialog = page.getByRole("dialog", { name: "The Godfather" });
+    const titleBox = await visibleBox(
+      dialog.getByRole("heading", { name: "The Godfather" }),
+    );
+    const ratingBox = await visibleBox(dialog.getByTitle("Click to change rating"));
+    const posterBox = await visibleBox(
+      dialog.getByRole("img", { name: "The Godfather" }).first(),
+    );
+
+    expect(titleBox.y + titleBox.height).toBeLessThan(posterBox.y);
+    expect(ratingBox.y + ratingBox.height).toBeLessThan(posterBox.y);
+  });
+
+  test("renders touch action buttons in recommendations and watchlist", async ({
+    page,
+  }) => {
+    const wishlistMovie = {
+      ...MOCK_MOVIES[0],
+      id: 99,
+      wishlist: 1,
+      user_rating: null,
+    };
+    await mockAPIs(page, [...MOCK_MOVIES, wishlistMovie]);
+    await gotoMobile(page);
+
+    const recCard = page.locator('[class*="group/rec"]').filter({ hasText: "GoodFellas" });
+    await recCard.getByRole("button", { name: "Show actions" }).click();
+    await expect(
+      recCard.getByRole("button", { name: "Add to watchlist" }),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: /^Watchlist/ }).first().click();
+    const wishCard = page.locator('[class*="group/wish"]').filter({ hasText: "The Godfather" });
+    await wishCard.getByRole("button", { name: "Show actions" }).click();
+    await expect(
+      wishCard.getByRole("button", { name: "Remove from watchlist" }),
+    ).toBeVisible();
+  });
+
+  test("keeps watchlist action buttons the same size as recommendation actions", async ({
+    page,
+  }) => {
+    const wishlistMovie = {
+      ...MOCK_MOVIES[0],
+      id: 99,
+      wishlist: 1,
+      user_rating: null,
+    };
+    await mockAPIs(page, [...MOCK_MOVIES, wishlistMovie]);
+    await gotoMobile(page);
+
+    const recCard = page.locator('[class*="group/rec"]').filter({ hasText: "GoodFellas" });
+    await recCard.getByRole("button", { name: "Show actions" }).click();
+    const recActionBox = await visibleBox(
+      recCard.getByRole("button", { name: "Add to watchlist" }),
+    );
+
+    await page.getByRole("button", { name: /^Watchlist/ }).first().click();
+    const wishCard = page.locator('[class*="group/wish"]').filter({ hasText: "The Godfather" });
+    await wishCard.getByRole("button", { name: "Show actions" }).click();
+    const watchlistActionBox = await visibleBox(
+      wishCard.getByRole("button", { name: "Watched & liked" }),
+    );
+
+    expect(Math.round(watchlistActionBox.width)).toBe(Math.round(recActionBox.width));
+    expect(Math.round(watchlistActionBox.height)).toBe(Math.round(recActionBox.height));
+  });
+
+  test("keeps the mobile header decluttered into separate logo and search rows", async ({
+    page,
+  }) => {
+    await mockAPIs(page);
+    await gotoMobile(page);
+
+    const headerRowBox = await visibleBox(page.getByTestId("app-header-row"));
+    const searchRowBox = await visibleBox(page.getByTestId("app-search-row"));
+    const searchBox = await visibleBox(page.getByPlaceholder("Search library..."));
+
+    expect(searchRowBox.y).toBeGreaterThanOrEqual(headerRowBox.y + headerRowBox.height);
+    expect(searchBox.x).toBeGreaterThanOrEqual(0);
+    expect(searchBox.x + searchBox.width).toBeLessThanOrEqual(mobileViewport.width);
+  });
+
+  test("stacks TV rows vertically below the desktop breakpoint", async ({
+    page,
+  }) => {
+    const now = new Date();
+    const start = new Date(now.getTime() - 10 * 60 * 1000).toISOString();
+    const stop = new Date(now.getTime() + 90 * 60 * 1000).toISOString();
+
+    await mockAPIs(page);
+    await page.route("/api/tv", (route) =>
+      route.fulfill({
+        json: {
+          channels: [{ id: "polsat-film", name: "Polsat Film HD", icon: null }],
+          programs: [
+            {
+              channel: "polsat-film",
+              title: "Stacked Film",
+              start,
+              stop,
+              description: null,
+              category: "Film",
+              icon: null,
+              rating: null,
+            },
+          ],
+          cachedAt: now.toISOString(),
+          epgUrl: "",
+          cached: true,
+        },
+      }),
+    );
+    await page.route("/api/tv/blacklist", (route) => route.fulfill({ json: [] }));
+    await page.route("/api/tv/enrich", (route) =>
+      route.fulfill({ json: { "Stacked Film": { rating: 7.4, year: 1999 } } }),
+    );
+    await gotoMobile(page, "/#tv");
+
+    const mobileRow = page.getByTestId("tv-mobile-row").filter({
+      hasText: "Stacked Film",
+    });
+    await expect(mobileRow).toBeVisible();
+    await expect(page.getByTestId("tv-desktop-row").filter({ hasText: "Stacked Film" })).not.toBeVisible();
+
+    const titleBox = await visibleBox(mobileRow.getByText("Stacked Film"));
+    const channelBox = await visibleBox(mobileRow.getByText("Polsat Film"));
+    expect(titleBox.y).toBeGreaterThan(channelBox.y);
+  });
+
+  test("allows Config sub-tab navigation to scroll horizontally", async ({
+    page,
+  }) => {
+    await mockAPIs(page);
+    await page.route("/api/movies?detached=1", (route) =>
+      route.fulfill({ json: [] }),
+    );
+    await gotoMobile(page, "/#config");
+
+    const tabStrip = page.getByTestId("config-tab-strip");
+    await expect(tabStrip.getByRole("button", { name: "Library" })).toBeVisible();
+
+    const metrics = await tabStrip.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      scrollLeft: element.scrollLeft,
+      scrollWidth: element.scrollWidth,
+    }));
+    expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth);
+
+    await tabStrip.evaluate((element) => {
+      element.scrollLeft = element.scrollWidth;
+    });
+    await expect
+      .poll(() => tabStrip.evaluate((element) => element.scrollLeft))
+      .toBeGreaterThan(metrics.scrollLeft);
+  });
+
+  test("pluralizes mood pick count for one and many picks", async ({ page }) => {
+    await mockAPIs(page);
+    await gotoMobile(page, "/#recommendations/mood/action_evening");
+    await expect(page.getByText(/1 pick$/)).toBeVisible();
+
+    const manyPage = await page.context().newPage();
+    try {
+      await mockAPIs(
+        manyPage,
+        MOCK_MOVIES,
+        [
+          {
+            reason: "High-energy action for tonight",
+            type: "mood",
+            recommendations: Array.from({ length: 5 }, (_, index) => ({
+              tmdb_id: 700 + index,
+              title: `Action Pick ${index + 1}`,
+              year: 2000 + index,
+              genre: "Action",
+              rating: 7.5,
+              poster_url: MOCK_POSTER,
+            })),
+          },
+        ],
+      );
+      await gotoMobile(manyPage, "/#recommendations/mood/action_evening");
+      await expect(manyPage.getByText(/5 picks$/)).toBeVisible();
+    } finally {
+      await manyPage.close();
+    }
+  });
+
+  test("keeps the rightmost app tab inside the mobile viewport", async ({
+    page,
+  }) => {
+    await mockAPIs(page);
+    await gotoMobile(page, "/#config");
+
+    const tabStripBox = await visibleBox(page.getByTestId("app-tab-strip"));
+    const activeTabBox = await visibleBox(
+      page.getByRole("button", { name: /^Config/ }),
+    );
+
+    expect(activeTabBox.x).toBeGreaterThanOrEqual(0);
+    expect(activeTabBox.x + activeTabBox.width).toBeLessThanOrEqual(
+      mobileViewport.width,
+    );
+    expect(tabStripBox.x + tabStripBox.width).toBeLessThanOrEqual(
+      mobileViewport.width,
+    );
   });
 });
 
@@ -531,6 +793,53 @@ test.describe("discover / recommendations tab", () => {
     );
 
     expect(topButtonText).toContain("Discover");
+  });
+});
+
+test.describe("search input typing across tabs", () => {
+  // Regression: the global search box renders on every tab, but a stray effect
+  // used to wipe searchQuery on any tab that wasn't library/search. That made
+  // the input impossible to type into on Discover/Watchlist/Config/TV — every
+  // keystroke was cleared. These tests guard that typing always sticks.
+  test.beforeEach(async ({ page }) => {
+    await mockAPIs(page);
+    await page.setViewportSize({ width: 375, height: 812 });
+    await page.goto("/");
+    await expect(page.getByPlaceholder("Search library...")).toBeVisible();
+  });
+
+  test("lets the user type in search on the Discover tab", async ({ page }) => {
+    const searchInput = page.getByPlaceholder("Search library...");
+    await searchInput.fill("godfather");
+    await expect(searchInput).toHaveValue("godfather");
+  });
+
+  test("lets the user type in search on the Watchlist tab", async ({ page }) => {
+    await page.getByRole("button", { name: /^Watchlist/ }).first().click();
+    await expect(page).toHaveURL(/#wishlist/);
+
+    const searchInput = page.getByPlaceholder("Search library...");
+    await searchInput.fill("godfather");
+    await expect(searchInput).toHaveValue("godfather");
+  });
+
+  test("lets the user type in search on the Config tab", async ({ page }) => {
+    await page.getByRole("button", { name: /^Config/ }).click();
+    await expect(page).toHaveURL(/#config/);
+
+    const searchInput = page.getByPlaceholder("Search library...");
+    await searchInput.fill("godfather");
+    await expect(searchInput).toHaveValue("godfather");
+  });
+
+  test("typing on Discover surfaces the matching library movie", async ({
+    page,
+  }) => {
+    const searchInput = page.getByPlaceholder("Search library...");
+    await searchInput.fill("godfather");
+
+    await expect(page.getByText("The Godfather")).toBeVisible();
+    await expect(page.getByText("Blade Runner 2049")).not.toBeVisible();
   });
 });
 

@@ -12,6 +12,8 @@ import { scanDirectoryGenerator } from "@/lib/scanner";
 import type { ScannedFile } from "@/lib/scanner";
 import { searchTmdb } from "@/lib/tmdb";
 import { selectTmdbSearchCandidates } from "@/lib/tmdb-match";
+import { rateLimit } from "@/lib/rate-limit";
+import type { NextRequest } from "next/server";
 import fs from "fs";
 
 function parseExtraFiles(extraFiles: string | null): string[] {
@@ -25,7 +27,9 @@ function parseExtraFiles(extraFiles: string | null): string[] {
   }
 }
 
-export async function POST() {
+export async function POST(request?: NextRequest) {
+  const limited = request ? rateLimit(request, "mutation") : null;
+  if (limited) return limited;
   const db = getDb();
   const libraryPath = getSetting(db, "library_path");
 
@@ -223,6 +227,15 @@ export async function POST() {
           "SELECT id, file_path, extra_files FROM movies WHERE file_path IS NOT NULL AND file_path != ''",
         )
         .all() as { id: number; file_path: string; extra_files: string | null }[];
+      const updateExtrasStmt = db.prepare(
+        "UPDATE movies SET extra_files = ?, video_metadata = NULL WHERE id = ?",
+      );
+      const promoteExtraStmt = db.prepare(
+        "UPDATE movies SET file_path = ?, extra_files = ?, video_metadata = NULL WHERE id = ?",
+      );
+      const detachStmt = db.prepare(
+        "UPDATE movies SET file_path = NULL, extra_files = NULL, video_metadata = NULL WHERE id = ?",
+      );
       for (const movie of currentMovies) {
         const existingExtras = parseExtraFiles(movie.extra_files).filter(
           (extraPath) => filePathSet.has(extraPath),
@@ -232,18 +245,14 @@ export async function POST() {
           const nextExtraFiles =
             existingExtras.length > 0 ? JSON.stringify(existingExtras) : null;
           if (nextExtraFiles !== movie.extra_files) {
-            db.prepare(
-              "UPDATE movies SET extra_files = ?, video_metadata = NULL WHERE id = ?",
-            ).run(nextExtraFiles, movie.id);
+            updateExtrasStmt.run(nextExtraFiles, movie.id);
           }
           continue;
         }
 
         if (existingExtras.length > 0) {
           const [promotedPath, ...remainingExtras] = existingExtras;
-          db.prepare(
-            "UPDATE movies SET file_path = ?, extra_files = ?, video_metadata = NULL WHERE id = ?",
-          ).run(
+          promoteExtraStmt.run(
             promotedPath,
             remainingExtras.length > 0 ? JSON.stringify(remainingExtras) : null,
             movie.id,
@@ -251,9 +260,7 @@ export async function POST() {
           continue;
         }
 
-        db.prepare(
-          "UPDATE movies SET file_path = NULL, extra_files = NULL, video_metadata = NULL WHERE id = ?",
-        ).run(movie.id);
+        detachStmt.run(movie.id);
         detached++;
       }
 

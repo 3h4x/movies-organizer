@@ -1,5 +1,6 @@
 import { getTmdbRecommendations, getTmdbSimilar } from "../tmdb";
 import {
+  attachTrace,
   filterResults,
   type EngineContext,
   type RecommendationGroup,
@@ -36,7 +37,8 @@ export async function movieEngine(
     if (similarResults) {
       const similar = similarResults[i];
       if (similar.status === "fulfilled") {
-        const seen = new Set(combined.map((r) => r.tmdb_id));
+        const seen = new Set<number>();
+        for (const r of result.value) seen.add(r.tmdb_id);
         for (const r of similar.value) {
           if (!seen.has(r.tmdb_id)) combined.push(r);
         }
@@ -47,7 +49,12 @@ export async function movieEngine(
       groups.push({
         reason: `Because you loved ${seeds[i].title}`,
         type: "movie",
-        recommendations: filtered,
+        recommendations: attachTrace(filtered, {
+          engine: "movie",
+          seedKind: "movie",
+          seedTmdbId: seeds[i].tmdb_id,
+          seedTitle: seeds[i].title,
+        }),
       });
     }
   });

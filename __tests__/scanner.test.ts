@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
 import path from "path";

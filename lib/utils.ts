@@ -138,33 +138,31 @@ export function parseGenreLabels(genre: string): string[] {
 }
 
 export function filterMovies(movies: Movie[], filters: MovieFilters): Movie[] {
-  let filtered = movies.filter(
-    (m) =>
-      m.source !== "recommendation" ||
-      (m.user_rating != null && (m.user_rating as number) > 0),
-  );
   const { searchQuery, genreFilter, sourceFilter, yearFilter, unratedOnly, hasFileOnly } =
     filters;
-  if (searchQuery) {
-    const q = searchQuery.toLowerCase();
-    filtered = filtered.filter(
-      (m) =>
-        m.title.toLowerCase().includes(q) ||
-        m.pl_title?.toLowerCase().includes(q),
-    );
+  const q = searchQuery ? searchQuery.toLowerCase() : null;
+  const result: Movie[] = [];
+  for (const m of movies) {
+    if (
+      m.source === "recommendation" &&
+      !(m.user_rating != null && m.user_rating > 0)
+    )
+      continue;
+    if (
+      q &&
+      !m.title.toLowerCase().includes(q) &&
+      !m.pl_title?.toLowerCase().includes(q)
+    )
+      continue;
+    if (genreFilter && !(m.genre && parseGenreLabels(m.genre).includes(genreFilter)))
+      continue;
+    if (sourceFilter && m.source !== sourceFilter) continue;
+    if (yearFilter && m.year?.toString() !== yearFilter) continue;
+    if (unratedOnly && m.user_rating && m.user_rating !== 0) continue;
+    if (hasFileOnly && !m.file_path) continue;
+    result.push(m);
   }
-  if (genreFilter)
-    filtered = filtered.filter((m) =>
-      m.genre ? parseGenreLabels(m.genre).includes(genreFilter) : false,
-    );
-  if (sourceFilter) filtered = filtered.filter((m) => m.source === sourceFilter);
-  if (yearFilter)
-    filtered = filtered.filter((m) => m.year?.toString() === yearFilter);
-  if (unratedOnly)
-    filtered = filtered.filter((m) => !m.user_rating || m.user_rating === 0);
-  if (hasFileOnly)
-    filtered = filtered.filter((m) => !!m.file_path);
-  return filtered;
+  return result;
 }
 
 export function sortMovies(
@@ -222,17 +220,18 @@ export function extractYears(movies: Movie[]): number[] {
 export function getRatedMovieTmdbIds(
   movies: Movie[],
 ): Set<number | null | undefined> {
-  return new Set(
-    movies
-      .filter(
-        (m) =>
-          m.type === "movie" &&
-          m.user_rating != null &&
-          (m.user_rating as number) > 0 &&
-          m.tmdb_id,
-      )
-      .map((m) => m.tmdb_id),
-  );
+  const ids = new Set<number | null | undefined>();
+  for (const m of movies) {
+    if (
+      m.type === "movie" &&
+      m.user_rating != null &&
+      m.user_rating > 0 &&
+      m.tmdb_id
+    ) {
+      ids.add(m.tmdb_id);
+    }
+  }
+  return ids;
 }
 
 export function filterRatedRecommendations(

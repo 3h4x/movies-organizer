@@ -1,8 +1,10 @@
+// tamtam inspected 2026-05-21
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 import Database from "better-sqlite3";
 import path from "path";
 import { initDb, insertMovie } from "@/lib/db";
+import { _resetForTests, _setBucketConfigForTests } from "@/lib/rate-limit";
 
 const { mockAccess, mockExecFile } = vi.hoisted(() => ({
   mockAccess: vi.fn(),
@@ -93,10 +95,12 @@ describe("movies/[id]/play POST handler", () => {
 
   afterEach(() => {
     db.close();
+    _resetForTests();
+    delete process.env.RATE_LIMIT_ENFORCE_IN_TESTS;
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const fs = require("fs");
-      if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB);
+      fs.unlinkSync(TEST_DB);
     } catch {}
     vi.resetAllMocks();
   });
@@ -167,5 +171,18 @@ describe("movies/[id]/play POST handler", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ok).toBe(true);
+  });
+
+  it("returns 429 and does not launch anything when the mutation bucket is exhausted", async () => {
+    process.env.RATE_LIMIT_ENFORCE_IN_TESTS = "1";
+    _setBucketConfigForTests("mutation", { limit: 1, windowMs: 60_000 });
+    mockAccess.mockResolvedValue(undefined);
+
+    const firstRes = await POST(postReq(movieWithFileId, { action: "play" }), makeParams(movieWithFileId));
+    expect(firstRes.status).toBe(200);
+
+    const secondRes = await POST(postReq(movieWithFileId, { action: "folder" }), makeParams(movieWithFileId));
+    expect(secondRes.status).toBe(429);
+    expect(mockAccess).toHaveBeenCalledTimes(1);
   });
 });

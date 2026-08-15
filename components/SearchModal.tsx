@@ -1,7 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Modal from "./ui/Modal";
 import MovieCard from "./MovieCard";
+import Spinner from "./ui/Spinner";
+import Button from "./ui/Button";
+import EmptyState from "@/components/ui/EmptyState";
 import {
   CARD_ACTION_ICON_SIZE_CLASS,
   CARD_ACTION_TOUCH_TARGET_CLASS,
@@ -24,6 +28,9 @@ interface SearchModalProps {
   initialQuery?: string;
   targetMovieId?: number | null;
 }
+
+const ADD_ACTION_CLASS = `bg-indigo-600/90 backdrop-blur-sm text-white rounded-lg ${CARD_ACTION_TOUCH_TARGET_CLASS} ${CARD_ACTION_ICON_SIZE_CLASS} flex items-center justify-center hover:bg-indigo-500 transition-colors`;
+const WATCHLIST_ACTION_CLASS = `bg-blue-600/90 backdrop-blur-sm text-white rounded-lg ${CARD_ACTION_TOUCH_TARGET_CLASS} ${CARD_ACTION_ICON_SIZE_CLASS} flex items-center justify-center hover:bg-blue-500 transition-colors`;
 
 export default function SearchModal({
   isOpen,
@@ -89,28 +96,15 @@ export default function SearchModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[90]">
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative flex items-start justify-center pt-[10vh] h-full pointer-events-none">
-        <div
-          className="bg-gray-900 border border-gray-700/50 rounded-2xl p-6 w-full max-w-2xl max-h-[75vh] overflow-y-auto shadow-2xl shadow-black/50 pointer-events-auto mx-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="search-modal-title"
-        >
-        <div className="flex justify-between items-center mb-5">
-          <h2 id="search-modal-title" className="text-white text-lg font-semibold">
-            {targetMovieId ? "Relink Metadata" : "Add to Library"}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-white transition-colors w-10 h-10 rounded-lg hover:bg-gray-800 flex items-center justify-center"
-            aria-label="Close search modal"
-          >
-            ✕
-          </button>
-        </div>
-
+    <Modal
+      title={targetMovieId ? "Relink Metadata" : "Add to Library"}
+      labelId="search-modal-title"
+      onClose={onClose}
+      maxWidth="max-w-2xl"
+      zIndex="z-[90]"
+      panelClassName="max-h-[75vh] overflow-y-auto"
+      closeOnBackdrop
+    >
         <div className="flex gap-2 mb-5">
           <div className="flex-1 relative">
             <input
@@ -123,22 +117,18 @@ export default function SearchModal({
               autoFocus
             />
           </div>
-          <button
+          <Button
             onClick={() => handleSearch()}
-            disabled={loading}
-            className="bg-indigo-500 text-white px-5 py-2.5 rounded-xl hover:bg-indigo-400 disabled:opacity-50 transition-all font-medium text-sm min-w-[80px]"
+            loading={loading}
+            className="px-5 py-2.5 rounded-xl text-sm min-w-[80px]"
           >
-            {loading ? (
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto" />
-            ) : (
-              "Search"
-            )}
-          </button>
+            Search
+          </Button>
         </div>
 
         {loading && results.length === 0 && (
           <div className="text-center py-12">
-            <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <Spinner className="mx-auto mb-3" />
             <p className="text-gray-500 text-sm">Searching TMDb...</p>
           </div>
         )}
@@ -163,7 +153,7 @@ export default function SearchModal({
                       e.stopPropagation();
                       onAdd(r, false);
                     }}
-                    className={`bg-indigo-600/90 backdrop-blur-sm text-white rounded-lg ${CARD_ACTION_TOUCH_TARGET_CLASS} ${CARD_ACTION_ICON_SIZE_CLASS} flex items-center justify-center hover:bg-indigo-500 transition-colors`}
+                    className={ADD_ACTION_CLASS}
                     aria-label={
                       targetMovieId
                         ? `Update existing movie with ${r.title}`
@@ -180,7 +170,7 @@ export default function SearchModal({
                       e.stopPropagation();
                       onAdd(r, true);
                     }}
-                    className={`bg-blue-600/90 backdrop-blur-sm text-white rounded-lg ${CARD_ACTION_TOUCH_TARGET_CLASS} ${CARD_ACTION_ICON_SIZE_CLASS} flex items-center justify-center hover:bg-blue-500 transition-colors`}
+                    className={WATCHLIST_ACTION_CLASS}
                     aria-label={`Add ${r.title} to watchlist`}
                     title="Add to watchlist"
                   >
@@ -193,22 +183,22 @@ export default function SearchModal({
         )}
 
         {results.length === 0 && !loading && hasSearched && query && (
-          <div className="text-center py-12">
-            <p className="text-gray-500">
-              No results for &ldquo;{query}&rdquo;
-            </p>
-          </div>
+          <EmptyState
+            variant="plain"
+            message={<>No results for &ldquo;{query}&rdquo;</>}
+          />
         )}
 
         {!hasSearched && !loading && results.length === 0 && (
-          <div className="text-center py-12">
-            <p className="text-gray-600 text-sm">
-              Type a movie name and press Enter
-            </p>
-          </div>
+          <EmptyState
+            variant="plain"
+            message={
+              <span className="text-sm text-gray-600">
+                Type a movie name and press Enter
+              </span>
+            }
+          />
         )}
-      </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

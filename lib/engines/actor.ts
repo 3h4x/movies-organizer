@@ -1,5 +1,6 @@
 import { discoverByPerson, getMovieCredits } from "../tmdb";
 import {
+  attachTrace,
   filterResults,
   type EngineContext,
   type RecommendationGroup,
@@ -38,10 +39,16 @@ export async function actorEngine(
   });
 
   const minAppearances = ctx.config?.actor_min_appearances ?? 2;
-  const topActors = [...actorCounts.entries()]
-    .filter(([, v]) => v.count >= minAppearances || v.avgRating >= 9)
-    .sort((a, b) => b[1].count * b[1].avgRating - a[1].count * a[1].avgRating)
-    .slice(0, 10);
+  type ActorEntry = [number, { name: string; count: number; avgRating: number }];
+  const scored: Array<{ entry: ActorEntry; score: number }> = [];
+  for (const entry of actorCounts) {
+    const [, v] = entry;
+    if (v.count >= minAppearances || v.avgRating >= 9) {
+      scored.push({ entry, score: v.count * v.avgRating });
+    }
+  }
+  scored.sort((a, b) => b.score - a.score);
+  const topActors = scored.slice(0, 10).map((x) => x.entry);
 
   const discoverResults = await Promise.allSettled(
     topActors.map(([id]) => discoverByPerson(id)),
@@ -55,7 +62,12 @@ export async function actorEngine(
       groups.push({
         reason: `Starring ${name}`,
         type: "actor",
-        recommendations: filtered.slice(0, 15),
+        recommendations: attachTrace(filtered.slice(0, 15), {
+          engine: "actor",
+          seedKind: "actor",
+          seedId: topActors[i][0],
+          seedName: name,
+        }),
       });
     }
   });

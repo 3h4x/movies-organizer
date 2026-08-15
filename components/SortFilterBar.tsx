@@ -41,6 +41,8 @@ const SORT_LABELS: Record<SortOption, string> = {
   rated_at: "Date Rated",
 };
 
+const SORT_KEYS = Object.keys(SORT_LABELS) as SortOption[];
+
 function getSortDirToggleLabel(sortDir: "asc" | "desc") {
   return sortDir === "desc"
     ? "Switch to ascending sort"
@@ -104,9 +106,8 @@ export function scrollActiveSortChipIntoView(
     overflowDirection === "right"
       ? (snapPoints.find((candidate) => candidate >= targetScrollLeft) ??
         maxScrollLeft)
-      : [...snapPoints]
-          .reverse()
-          .find((candidate) => candidate <= targetScrollLeft) ?? 0;
+      : (snapPoints.findLast((candidate) => candidate <= targetScrollLeft) ??
+        0);
 
   container.scrollTo({
     left: Math.min(snappedScrollLeft, maxScrollLeft),
@@ -154,6 +155,20 @@ export default function SortFilterBar({
 
   return (
     <div className="space-y-3 mb-6">
+      <div className="relative w-full sm:max-w-sm">
+        <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center">
+          <span className="text-sm text-gray-500">⌕</span>
+        </div>
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder="Search title, director, actor..."
+          aria-label="Search library"
+          className="min-h-11 w-full rounded-xl border border-gray-700/50 bg-gray-800/60 py-2 pl-9 pr-3 text-sm text-white placeholder-gray-600 transition-all focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/20"
+        />
+      </div>
+
       {/* Sort + filter row */}
       <div className="flex flex-wrap items-center gap-3">
         {/* Sort buttons — scrollable on mobile */}
@@ -162,12 +177,12 @@ export default function SortFilterBar({
             ref={sortTabsRef}
             className="flex w-full items-center gap-1 bg-gray-800/40 p-1 rounded-xl overflow-x-auto pr-10 sm:w-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
           >
-            {(Object.keys(SORT_LABELS) as SortOption[]).map((key) => (
+            {SORT_KEYS.map((key) => (
               <button
                 key={key}
                 data-active={sort === key}
                 onClick={() => onSortChange(key)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all whitespace-nowrap shrink-0 ${
+                className={`min-h-11 px-3 py-2 text-xs font-medium rounded-lg transition-all whitespace-nowrap shrink-0 ${
                   sort === key
                     ? "bg-gray-700/80 text-white shadow-sm"
                     : "text-gray-500 hover:text-gray-300 hover:bg-gray-700/30"
@@ -178,7 +193,7 @@ export default function SortFilterBar({
             ))}
             <button
               onClick={onSortDirChange}
-              className="px-2 py-1.5 text-xs text-gray-400 hover:text-white rounded-lg hover:bg-gray-700/30 transition-all flex-shrink-0"
+              className="min-h-11 min-w-11 px-2 py-2 text-xs text-gray-400 hover:text-white rounded-lg hover:bg-gray-700/30 transition-all flex-shrink-0"
               title={sortDir === "desc" ? "Descending" : "Ascending"}
               aria-label={getSortDirToggleLabel(sortDir)}
             >
@@ -196,7 +211,7 @@ export default function SortFilterBar({
               aria-label="Filter by genre"
               value={genre}
               onChange={(e) => onGenreChange(e.target.value)}
-              className="bg-gray-800/60 text-gray-300 text-xs px-3 py-2 rounded-xl border border-gray-700/50 focus:border-indigo-500/50 focus:outline-none appearance-none cursor-pointer"
+              className="min-h-11 bg-gray-800/60 text-gray-300 text-xs px-3 py-2 rounded-xl border border-gray-700/50 focus:border-indigo-500/50 focus:outline-none appearance-none cursor-pointer"
             >
               <option value="">All Genres</option>
               {genres.map((g) => (
@@ -213,7 +228,7 @@ export default function SortFilterBar({
               aria-label="Filter by source"
               value={source}
               onChange={(e) => onSourceChange(e.target.value)}
-              className="bg-gray-800/60 text-gray-300 text-xs px-3 py-2 rounded-xl border border-gray-700/50 focus:border-indigo-500/50 focus:outline-none appearance-none cursor-pointer"
+              className="min-h-11 bg-gray-800/60 text-gray-300 text-xs px-3 py-2 rounded-xl border border-gray-700/50 focus:border-indigo-500/50 focus:outline-none appearance-none cursor-pointer"
             >
               <option value="">All Sources</option>
               {sources.map((s) => (
@@ -230,7 +245,7 @@ export default function SortFilterBar({
               aria-label="Filter by year"
               value={year}
               onChange={(e) => onYearChange(e.target.value)}
-              className="bg-gray-800/60 text-gray-300 text-xs px-3 py-2 rounded-xl border border-gray-700/50 focus:border-indigo-500/50 focus:outline-none appearance-none cursor-pointer"
+              className="min-h-11 bg-gray-800/60 text-gray-300 text-xs px-3 py-2 rounded-xl border border-gray-700/50 focus:border-indigo-500/50 focus:outline-none appearance-none cursor-pointer"
             >
               <option value="">All Years</option>
               {years.map((y) => (
@@ -244,7 +259,7 @@ export default function SortFilterBar({
           {/* Unrated toggle */}
           <button
             onClick={() => onUnratedChange(!unratedOnly)}
-            className={`px-3 py-2 text-xs font-medium rounded-xl border transition-all ${
+            className={`min-h-11 px-3 py-2 text-xs font-medium rounded-xl border transition-all ${
               unratedOnly
                 ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/30"
                 : "bg-gray-800/60 text-gray-400 border-gray-700/50 hover:text-gray-300"
@@ -256,7 +271,7 @@ export default function SortFilterBar({
           {/* Has file toggle */}
           <button
             onClick={() => onHasFileChange(!hasFileOnly)}
-            className={`px-3 py-2 text-xs font-medium rounded-xl border transition-all ${
+            className={`min-h-11 px-3 py-2 text-xs font-medium rounded-xl border transition-all ${
               hasFileOnly
                 ? "bg-indigo-500/20 text-indigo-400 border-indigo-500/30"
                 : "bg-gray-800/60 text-gray-400 border-gray-700/50 hover:text-gray-300"

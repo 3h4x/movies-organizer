@@ -1,5 +1,5 @@
 #!/bin/bash
-# Backup movies-organizer SQLite DB using better-sqlite3 .backup() (safe with WAL mode)
+# Backup FilmPick SQLite DB using better-sqlite3 .backup() (safe with WAL mode)
 # Tiered retention: 4x15min, 4 hourly, 4 daily, 4 weekly, 4 monthly, 4 yearly
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

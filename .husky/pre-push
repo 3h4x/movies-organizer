@@ -1,1 +1,2 @@
+# tamtam inspected 2026-05-21
 pnpm type-check && pnpm lint && pnpm test

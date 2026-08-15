@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 export interface LatestOnlyRunCallbacks<T> {
   onStart?: () => void;
   onSuccess: (result: T) => void;

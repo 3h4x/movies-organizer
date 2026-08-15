@@ -1,6 +1,8 @@
 const CDA_BASE = "https://www.cda.pl";
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+const CDA_MOVIE_SLIDE_RE =
+  /<li class="mb-slide" title="([^"]*)">\s*<a href="([^"]*vfilm)">\s*<img[^>]*src="([^"]*)"/g;
 
 export interface CdaMovie {
   title: string;
@@ -37,11 +39,10 @@ function extractMovies(html: string): CdaMovie[] {
   const movies: CdaMovie[] = [];
   const seen = new Set<string>();
 
-  const regex =
-    /<li class="mb-slide" title="([^"]*)">\s*<a href="([^"]*vfilm)">\s*<img[^>]*src="([^"]*)"/g;
+  CDA_MOVIE_SLIDE_RE.lastIndex = 0;
   let match;
 
-  while ((match = regex.exec(html)) !== null) {
+  while ((match = CDA_MOVIE_SLIDE_RE.exec(html)) !== null) {
     const rawTitle = match[1];
     const url = match[2].startsWith("http")
       ? match[2]

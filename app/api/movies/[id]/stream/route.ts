@@ -5,6 +5,8 @@ import fs from "fs";
 import { stat } from "fs/promises";
 import path from "path";
 
+const SRT_TIMESTAMP_RE = /(\d{2}:\d{2}:\d{2}),(\d{3})/g;
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -45,7 +47,7 @@ export async function GET(
         if (subPath.toLowerCase().endsWith(".srt")) {
           subContent =
             "WEBVTT\n\n" +
-            subContent.replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, "$1.$2");
+            subContent.replace(SRT_TIMESTAMP_RE, "$1.$2");
         }
 
         return new NextResponse(subContent, {
@@ -75,6 +77,7 @@ export async function GET(
 
       const chunksize = end - start + 1;
       const file = fs.createReadStream(activeFilePath, { start, end });
+      file.on?.("error", (err) => console.error("[Stream API Error]", err));
 
       const head = {
         "Content-Range": `bytes ${start}-${end}/${fileStat.size}`,
@@ -97,6 +100,7 @@ export async function GET(
           : "video/mp4",
       };
       const file = fs.createReadStream(activeFilePath);
+      file.on?.("error", (err) => console.error("[Stream API Error]", err));
       return new NextResponse(file as unknown as BodyInit, {
         status: 200,
         headers: head,

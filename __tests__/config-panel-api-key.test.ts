@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 import { describe, expect, it } from "vitest";
 import { shouldSubmitApiKey } from "@/components/ConfigPanel";
 

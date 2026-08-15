@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Modal from "./ui/Modal";
+import Spinner from "./ui/Spinner";
+import Button from "./ui/Button";
 
 interface ImportResult {
   added: number;
@@ -101,9 +104,6 @@ export default function ImportModal({
             if (update.type === "discovery") {
               setDiscoveryCount(update.count);
               setDiscoveryFile(update.filename);
-              // Clear progress when discovery is active to show "Scanning" state
-              // But with interleaved, they might arrive together.
-              // We'll prioritize progress display if it's available.
             } else if (update.type === "progress") {
               setProgress(update);
             } else if (update.type === "complete") {
@@ -128,21 +128,7 @@ export default function ImportModal({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-start justify-center z-50 pt-[10vh] px-4">
-      <div className="bg-gray-900 border border-gray-700/50 rounded-2xl p-6 w-full max-w-lg shadow-2xl shadow-black/50">
-        <div className="flex justify-between items-center mb-5">
-          <h2 className="text-white text-lg font-semibold">
-            Import from Folder
-          </h2>
-          <button
-            onClick={onClose}
-            aria-label="Close import modal"
-            className="text-gray-500 hover:text-white transition-colors w-10 h-10 rounded-lg hover:bg-gray-800 flex items-center justify-center"
-          >
-            ✕
-          </button>
-        </div>
-
+    <Modal title="Import from Folder" labelId="import-modal-title" onClose={onClose}>
         <p className="text-gray-400 text-sm mb-4">
           Scan a directory for video files and automatically fetch metadata from
           TMDb.
@@ -174,23 +160,20 @@ export default function ImportModal({
               className="flex-1 bg-gray-800/80 text-white px-4 py-2.5 rounded-xl border border-gray-700/50 focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 focus:outline-none placeholder-gray-600 text-sm font-mono"
               autoFocus
             />
-            <button
+            <Button
               onClick={handleImport}
-              disabled={loading || !path.trim()}
-              className="bg-indigo-500 text-white px-5 py-2.5 rounded-xl hover:bg-indigo-400 disabled:opacity-50 transition-all font-medium text-sm min-w-[80px]"
+              disabled={!path.trim()}
+              loading={loading}
+              className="px-5 py-2.5 rounded-xl text-sm min-w-[80px]"
             >
-              {loading ? (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto" />
-              ) : (
-                "Import"
-              )}
-            </button>
+              Import
+            </Button>
           </div>
         </div>
 
         {loading && (
           <div className="bg-gray-800/50 rounded-xl p-4 text-center">
-            <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <Spinner className="mx-auto mb-3" />
 
             <div className="space-y-3">
               {discoveryCount > 0 && (
@@ -282,7 +265,6 @@ export default function ImportModal({
         <div className="mt-4 text-xs text-gray-600">
           Supported: .mp4, .mkv, .avi, .wmv, .m4v, .mov, .flv, .webm
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

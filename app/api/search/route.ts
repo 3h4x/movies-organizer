@@ -1,7 +1,10 @@
 import { NextRequest } from "next/server";
 import { searchTmdbForUi } from "@/lib/tmdb";
+import { rateLimit } from "@/lib/rate-limit";
 
 export async function GET(request: NextRequest) {
+  const limited = rateLimit(request, "tmdb");
+  if (limited) return limited;
   const query = request.nextUrl.searchParams.get("q") || "";
 
   if (!query.trim()) {

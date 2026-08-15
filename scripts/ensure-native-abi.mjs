@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 

@@ -1,4 +1,5 @@
 "use client";
+// tamtam inspected 2026-05-21
 
 import { useState } from "react";
 import { CARD_ACTION_TOGGLE_CLASS } from "./card-action-styles";
@@ -25,7 +26,7 @@ export default function CardActionStack({ actions }: CardActionStackProps) {
 
   return (
     <div className="absolute right-1 bottom-14 z-10">
-      <div className="hidden flex-col gap-1 opacity-0 transition-all duration-200 [@media(hover:hover)]:flex [@media(hover:hover)]:group-hover/rec:opacity-100 [@media(hover:hover)]:group-hover/wish:opacity-100">
+      <div className="pointer-events-none hidden flex-col gap-1 opacity-0 transition-all duration-200 [@media(hover:hover)]:flex [@media(hover:hover)]:group-hover/rec:pointer-events-auto [@media(hover:hover)]:group-hover/rec:opacity-100 [@media(hover:hover)]:group-hover/wish:pointer-events-auto [@media(hover:hover)]:group-hover/wish:opacity-100">
         {actions.map((action) => (
           <button
             key={action.key}

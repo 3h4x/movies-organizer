@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 import Database from "better-sqlite3";
@@ -63,7 +64,7 @@ describe("movies/[id]/stream GET handler", () => {
   beforeEach(() => {
     db = new Database(TEST_DB);
     initDb(db);
-    vi.mocked(getDb).mockReturnValue(db as unknown as ReturnType<typeof getDb>);
+    vi.mocked(getDb).mockReturnValue(db);
     mockCreateReadStream.mockReturnValue(FAKE_STREAM);
   });
 

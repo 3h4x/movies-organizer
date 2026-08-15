@@ -1,3 +1,4 @@
+<!-- tamtam inspected 2026-05-21 -->
 # CDA Refresh Scheduling Design
 
 Date: 2026-04-17
@@ -22,15 +23,22 @@ This keeps scheduler startup in one process-level entrypoint.
 
 ### CDA Scheduler
 
-`lib/cda-scheduler.ts` is a singleton module with one module-scoped `activeTimer`.
+`lib/cda-scheduler.ts` is a singleton module with module-scoped timers for the
+CDA refresh job and the CDA dead-link health-check job.
 
 It exports:
 
-- `initCdaScheduler(db)`: resets stale `"running"` status to `"idle"` after process restart, then calls `rescheduleCdaJob(db)`.
+- `initCdaScheduler(db)`: resets stale refresh and health-check `"running"` statuses to `"idle"` after process restart, then calls `rescheduleCdaJob(db)` and `rescheduleCdaHealthJob(db)`.
 - `rescheduleCdaJob(db)`: clears the current interval, reads `cda_refresh_interval_hours`, and starts a new `setInterval` only when the interval is non-zero.
 - `runCdaRefreshNow(db)`: exits early if `cda_refresh_status` is already `"running"`, otherwise sets the status to `"running"` and calls `fetchAndStoreCdaMovies(db)`.
+- `rescheduleCdaHealthJob(db)`: clears the current health interval, reads `cda_health_interval_hours`, and defaults to a 12-hour cadence when missing.
+- `runCdaHealthCheckNow(db)`: exits early if `cda_health_status` is already `"running"`, otherwise probes a slow rolling batch of cached CDA links.
 
 Successful refreshes update `cda_last_refresh`, `cda_movie_count`, and `cda_refresh_status = "idle"`. Failed refreshes log the failure and set `cda_refresh_status = "error"`.
+
+Successful health checks update `cda_health_last_run`, `cda_dead_link_count`,
+and `cda_health_status = "idle"`. Links returning 404 or 410 are hidden from
+the CDA recommendation engine until a later pass observes a live 2xx/3xx status.
 
 ### API Entry Points
 
@@ -44,6 +52,8 @@ Successful refreshes update `cda_last_refresh`, `cda_movie_count`, and `cda_refr
 - `cda_last_refresh`
 - `cda_movie_count`
 - `cda_refresh_status`
+- `cda_health_last_run`
+- `cda_dead_link_count`
 
 ## Settings
 
@@ -53,6 +63,10 @@ Successful refreshes update `cda_last_refresh`, `cda_movie_count`, and `cda_refr
 | `cda_last_refresh` | string | ISO 8601 timestamp | Missing/null is never refreshed |
 | `cda_movie_count` | string | integer count | Missing/null is unknown |
 | `cda_refresh_status` | string | `idle`, `running`, `error` | Missing/null is `idle` |
+| `cda_health_interval_hours` | string | integer hours, `0` disables | Missing/null is `12` |
+| `cda_health_status` | string | `idle`, `running`, `error` | Missing/null is `idle` |
+| `cda_health_last_run` | string | ISO 8601 timestamp | Missing/null is never checked |
+| `cda_dead_link_count` | string | integer count | Missing/null is unknown |
 
 ## Constraints
 
@@ -60,3 +74,4 @@ Successful refreshes update `cda_last_refresh`, `cda_movie_count`, and `cda_refr
 - Do not initialize CDA or EPG schedulers from `app/layout.tsx`, React components, route module top level, or ad-hoc first-use code.
 - Keep the timer singleton module-local. Rescheduling must clear the prior timer before starting a replacement.
 - Manual and scheduled refreshes share the same `runCdaRefreshNow(db)` concurrency guard.
+- Scheduled health checks share the same `runCdaHealthCheckNow(db)` concurrency guard and must keep request volume low.

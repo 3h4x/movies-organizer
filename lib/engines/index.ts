@@ -1,15 +1,21 @@
 import type { Movie } from "../db";
 import type { TmdbSearchResult } from "../tmdb";
+import type {
+  RecommendationSourceKind,
+  RecommendationTrace,
+} from "../recommendation-trace";
 import { genreEngine } from "./genre";
 import { directorEngine } from "./director";
 import { actorEngine } from "./actor";
 import { movieEngine } from "./movie";
+import { franchiseEngine } from "./franchise";
 import { hiddenGemEngine } from "./hidden-gem";
 import { starStuddedEngine } from "./star-studded";
 import { randomEngine } from "./random";
 import { getDb, getRecommendedMovies } from "../db";
 import { cdaEngine } from "./cda";
 import { watchlistEngine } from "./watchlist";
+import { aiEngine, getAiProfileHash } from "./ai";
 import { parseGenreLabels } from "../utils";
 
 // Normalize a title for set-membership comparison: lowercase, collapse all whitespace
@@ -58,14 +64,42 @@ export interface EngineDefinition {
   engine: RecommendationEngine;
   dbBacked?: boolean; // Skip recommendation_cache, reads from recommended_movies directly
   noCache?: boolean; // Always fetch fresh results (never cache)
+  cacheKey?: (ctx: EngineContext) => string;
+  cacheMaxAgeHours?: number;
+  cacheEmptyResults?: boolean;
+}
+
+function franchiseCacheKey(ctx: EngineContext): string {
+  const libraryIds = [...ctx.libraryTmdbIds].sort((a, b) => a - b).join(",");
+  const collections = ctx.library
+    .filter((movie) => movie.tmdb_collection_id && movie.tmdb_collection_name)
+    .map((movie) => `${movie.tmdb_collection_id}:${movie.tmdb_collection_name}`)
+    .sort()
+    .join("|");
+  return `franchise:${libraryIds}:${collections}`;
 }
 
 export const engines: Record<string, EngineDefinition> = {
+  ai: {
+    name: "For You",
+    icon: "✨",
+    engine: aiEngine,
+    cacheKey: (ctx) => `ai:${getAiProfileHash(ctx)}`,
+    cacheMaxAgeHours: 24 * 7,
+    cacheEmptyResults: false,
+  },
   random: { name: "Surprise Me", icon: "🎲", engine: randomEngine, noCache: true },
   genre: { name: "By Genre", icon: "🎭", engine: genreEngine },
   director: { name: "By Director", icon: "🎬", engine: directorEngine },
   actor: { name: "By Actor", icon: "⭐", engine: actorEngine },
   movie: { name: "Similar", icon: "💡", engine: movieEngine },
+  franchise: {
+    name: "Franchises",
+    icon: "🎞️",
+    engine: franchiseEngine,
+    cacheKey: franchiseCacheKey,
+    cacheEmptyResults: false,
+  },
   hidden_gem: { name: "Hidden Gems", icon: "💎", engine: hiddenGemEngine },
   star_studded: { name: "Star-Studded", icon: "🌟", engine: starStuddedEngine },
   cda: { name: "On CDA", icon: "📺", engine: cdaEngine, dbBacked: true },
@@ -102,6 +136,41 @@ export function enrichWithCda(
     if (cdaUrl) return { ...r, cda_url: cdaUrl };
     return r;
   });
+}
+
+export function attachTrace(
+  results: TmdbSearchResult[],
+  trace: Omit<RecommendationTrace, "source"> & {
+    source?: RecommendationSourceKind;
+  },
+): TmdbSearchResult[] {
+  return results.map((result) => ({
+    ...result,
+    trace: {
+      ...trace,
+      source: trace.source ?? "live_tmdb",
+    },
+  }));
+}
+
+export function overrideTraceSource(
+  groups: RecommendationGroup[],
+  source: RecommendationSourceKind,
+): RecommendationGroup[] {
+  return groups.map((group) => ({
+    ...group,
+    recommendations: group.recommendations.map((recommendation) =>
+      recommendation.trace
+        ? {
+            ...recommendation,
+            trace: {
+              ...recommendation.trace,
+              source,
+            },
+          }
+        : recommendation,
+    ),
+  }));
 }
 
 export function buildContext(
@@ -141,8 +210,7 @@ export function filterResults(
     if (cfg?.min_year && r.year && r.year < cfg.min_year) return false;
     if (cfg?.min_rating && r.rating < cfg.min_rating) return false;
     if (excludedGenres && r.genre) {
-      const movieGenres = parseGenreLabels(r.genre).map((g) => g.toLowerCase());
-      if (movieGenres.some((g) => excludedGenres.has(g))) return false;
+      if (parseGenreLabels(r.genre).some((g) => excludedGenres.has(g.toLowerCase()))) return false;
     }
     seen.add(r.tmdb_id);
     return true;

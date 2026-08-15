@@ -1,4 +1,5 @@
 "use client";
+// tamtam inspected 2026-05-21
 import { useMemo } from "react";
 import CardActionStack from "@/components/CardActionStack";
 import MovieCard from "@/components/MovieCard";
@@ -6,16 +7,23 @@ import {
   CARD_ACTION_ICON_SIZE_CLASS,
   CARD_ACTION_TOUCH_TARGET_CLASS,
 } from "@/components/card-action-styles";
+import EmptyState from "@/components/ui/EmptyState";
 import RecommendationRow from "@/components/RecommendationRow";
 import RecommendationSkeleton from "@/components/RecommendationSkeleton";
 import { getUniqueRecommendations } from "@/lib/utils";
-import type { RecommendationGroup } from "@/lib/types";
+import type { RecommendationGroup, RecType } from "@/lib/types";
 import { REC_CATEGORIES } from "@/lib/types";
 import type { TmdbSearchResult } from "@/lib/tmdb";
 import { MOOD_PRESETS, MOOD_KEYS, type MoodKey } from "@/lib/mood-presets";
 import type { useRecommendations } from "@/lib/hooks/useRecommendations";
 
 type RecsState = ReturnType<typeof useRecommendations>;
+
+const LIKED_ACTION_CLASS = `bg-green-600/90 backdrop-blur-sm text-white rounded-lg ${CARD_ACTION_TOUCH_TARGET_CLASS} ${CARD_ACTION_ICON_SIZE_CLASS} flex items-center justify-center hover:bg-green-500 transition-colors`;
+const WATCHED_ACTION_CLASS = `bg-gray-600/90 backdrop-blur-sm text-white rounded-lg ${CARD_ACTION_TOUCH_TARGET_CLASS} ${CARD_ACTION_ICON_SIZE_CLASS} flex items-center justify-center hover:bg-gray-500 transition-colors`;
+const WISHLIST_ACTION_CLASS = `bg-blue-600/90 backdrop-blur-sm text-white rounded-lg ${CARD_ACTION_TOUCH_TARGET_CLASS} ${CARD_ACTION_ICON_SIZE_CLASS} flex items-center justify-center hover:bg-blue-500 transition-colors`;
+const DISLIKED_ACTION_CLASS = `bg-orange-600/90 backdrop-blur-sm text-white rounded-lg ${CARD_ACTION_TOUCH_TARGET_CLASS} ${CARD_ACTION_ICON_SIZE_CLASS} flex items-center justify-center hover:bg-orange-500 transition-colors`;
+const DISMISS_ACTION_CLASS = `bg-red-600/90 backdrop-blur-sm text-white rounded-lg ${CARD_ACTION_TOUCH_TARGET_CLASS} ${CARD_ACTION_ICON_SIZE_CLASS} flex items-center justify-center hover:bg-red-500 transition-colors`;
 
 function formatRefreshTime(iso: string): string {
   const date = new Date(iso);
@@ -85,23 +93,27 @@ export default function RecommendationsView({
     return getUniqueRecommendations(recommendations);
   }, [recommendations]);
 
+  function findRecommendationEngine(tmdbId: number): RecType | undefined {
+    return recommendations.find((group) =>
+      group.recommendations.some((recommendation) => recommendation.tmdb_id === tmdbId),
+    )?.type;
+  }
+
   if (!hasMovies) {
     return (
-      <div className="text-center py-24">
-        <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gray-800/50 flex items-center justify-center">
-          <span className="text-4xl">💡</span>
-        </div>
-        <p className="text-gray-400 text-lg font-medium">
-          No recommendations yet
-        </p>
-        <p className="text-gray-600 text-sm mt-2">
-          Add some movies to your library first
-        </p>
-      </div>
+      <EmptyState
+        icon="💡"
+        message="No recommendations yet"
+        subtext="Add some movies to your library first"
+      />
     );
   }
 
-  function recActionButtons(r: TmdbSearchResult, fromMood = false) {
+  function recActionButtons(
+    r: TmdbSearchResult,
+    fromMood = false,
+    engine = fromMood ? ("mood" as RecType) : findRecommendationEngine(r.tmdb_id),
+  ) {
     return (
       <CardActionStack
         actions={[
@@ -109,41 +121,36 @@ export default function RecommendationsView({
             key: "liked",
             label: "Watched & liked",
             icon: "👍",
-            className:
-              `bg-green-600/90 backdrop-blur-sm text-white rounded-lg ${CARD_ACTION_TOUCH_TARGET_CLASS} ${CARD_ACTION_ICON_SIZE_CLASS} flex items-center justify-center hover:bg-green-500 transition-colors`,
-            onClick: () => handleRecAction(r.tmdb_id, "liked", r, fromMood),
+            className: LIKED_ACTION_CLASS,
+            onClick: () => handleRecAction(r.tmdb_id, "liked", r, fromMood, engine),
           },
           {
             key: "watched",
             label: "Watched",
             icon: "👁",
-            className:
-              `bg-gray-600/90 backdrop-blur-sm text-white rounded-lg ${CARD_ACTION_TOUCH_TARGET_CLASS} ${CARD_ACTION_ICON_SIZE_CLASS} flex items-center justify-center hover:bg-gray-500 transition-colors`,
-            onClick: () => handleRecAction(r.tmdb_id, "watched", r, fromMood),
+            className: WATCHED_ACTION_CLASS,
+            onClick: () => handleRecAction(r.tmdb_id, "watched", r, fromMood, engine),
           },
           {
             key: "wishlist",
             label: "Add to watchlist",
             icon: "🔖",
-            className:
-              `bg-blue-600/90 backdrop-blur-sm text-white rounded-lg ${CARD_ACTION_TOUCH_TARGET_CLASS} ${CARD_ACTION_ICON_SIZE_CLASS} flex items-center justify-center hover:bg-blue-500 transition-colors`,
-            onClick: () => handleRecAction(r.tmdb_id, "wishlist", r, fromMood),
+            className: WISHLIST_ACTION_CLASS,
+            onClick: () => handleRecAction(r.tmdb_id, "wishlist", r, fromMood, engine),
           },
           {
             key: "disliked",
             label: "Watched & disliked",
             icon: "👎",
-            className:
-              `bg-orange-600/90 backdrop-blur-sm text-white rounded-lg ${CARD_ACTION_TOUCH_TARGET_CLASS} ${CARD_ACTION_ICON_SIZE_CLASS} flex items-center justify-center hover:bg-orange-500 transition-colors`,
-            onClick: () => handleRecAction(r.tmdb_id, "disliked", r, fromMood),
+            className: DISLIKED_ACTION_CLASS,
+            onClick: () => handleRecAction(r.tmdb_id, "disliked", r, fromMood, engine),
           },
           {
             key: "dismiss",
             label: "Don't show again",
             icon: "✕",
-            className:
-              `bg-red-600/90 backdrop-blur-sm text-white rounded-lg ${CARD_ACTION_TOUCH_TARGET_CLASS} ${CARD_ACTION_ICON_SIZE_CLASS} flex items-center justify-center hover:bg-red-500 transition-colors`,
-            onClick: () => handleRecAction(r.tmdb_id, "dismiss", r, fromMood),
+            className: DISMISS_ACTION_CLASS,
+            onClick: () => handleRecAction(r.tmdb_id, "dismiss", r, fromMood, engine),
           },
         ]}
       />
@@ -185,7 +192,7 @@ export default function RecommendationsView({
             <div className="absolute top-full left-0 mt-1 bg-gray-800 border border-gray-700 rounded-xl shadow-xl z-50 py-1 min-w-[180px]">
               {REC_CATEGORIES.filter((cat) => cat.value === "all" || !disabledEngines.includes(cat.value)).map((cat) => (
                 <button key={cat.value} onClick={() => { clearInvalidMood(); setRecCategory(cat.value); setActiveMood(null); setEngineDropdownOpen(false); }}
-                  className={`w-full flex items-center justify-between px-3 py-1.5 text-xs font-medium transition-all ${!activeMood && recCategory === cat.value ? "text-white bg-gray-700/60" : "text-gray-400 hover:text-gray-200 hover:bg-gray-700/30"}`}>
+                  className={`flex min-h-11 w-full items-center justify-between px-3 py-2 text-xs font-medium transition-all ${!activeMood && recCategory === cat.value ? "text-white bg-gray-700/60" : "text-gray-400 hover:text-gray-200 hover:bg-gray-700/30"}`}>
                   <span>{cat.label}</span>
                   {categoryCounts[cat.value] != null && <span className="tabular-nums text-gray-600 ml-3">{categoryCounts[cat.value]}</span>}
                 </button>
@@ -212,7 +219,7 @@ export default function RecommendationsView({
             <div className="absolute top-full left-0 mt-1 bg-gray-800 border border-gray-700 rounded-xl shadow-xl z-50 py-1 min-w-[180px]">
               {activeMood && (
                 <>
-                  <button onClick={() => { clearInvalidMood(); setActiveMood(null); setMoodDropdownOpen(false); }} className="w-full flex items-center px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-200 hover:bg-gray-700/30 transition-all">Clear mood</button>
+                  <button onClick={() => { clearInvalidMood(); setActiveMood(null); setMoodDropdownOpen(false); }} className="flex min-h-11 w-full items-center px-3 py-2 text-xs font-medium text-gray-500 transition-all hover:bg-gray-700/30 hover:text-gray-200">Clear mood</button>
                   <div className="h-px bg-gray-700/60 mx-2 my-1" />
                 </>
               )}
@@ -220,7 +227,7 @@ export default function RecommendationsView({
                 const preset = MOOD_PRESETS[key];
                 return (
                   <button key={key} onClick={() => { clearInvalidMood(); setActiveMood(key); setMoodDropdownOpen(false); }}
-                    className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs font-medium transition-all ${activeMood === key ? "text-white bg-indigo-600/40" : "text-gray-400 hover:text-gray-200 hover:bg-gray-700/30"}`}>
+                    className={`flex min-h-11 w-full items-center gap-2 px-3 py-2 text-xs font-medium transition-all ${activeMood === key ? "text-white bg-indigo-600/40" : "text-gray-400 hover:text-gray-200 hover:bg-gray-700/30"}`}>
                     <span>{preset.icon}</span>
                     <span>{preset.label}</span>
                   </button>
@@ -250,38 +257,35 @@ export default function RecommendationsView({
 
       {/* Content */}
       {invalidMoodKey ? (
-        <div className="text-center py-24">
-          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gray-800/50 flex items-center justify-center">
-            <span className="text-4xl">🧭</span>
-          </div>
-          <p className="text-gray-400 text-lg font-medium">Unknown mood preset</p>
-          <p className="text-gray-600 text-sm mt-2">
-            <span className="text-gray-500">{`"${invalidMoodKey}" isn't available in this build.`}</span>{" "}
-            Choose one from the Mood menu.
-          </p>
-        </div>
+        <EmptyState
+          className="mx-auto max-w-xl"
+          icon="🧭"
+          message="Unknown mood preset"
+          subtext={
+            <span className="break-words">
+              <span className="text-gray-500">{`"${invalidMoodKey}" isn't available in this build.`}</span>{" "}
+              Choose one from the Mood menu.
+            </span>
+          }
+        />
       ) : activeMood ? (
         moodLoading ? (
           <RecommendationSkeleton />
         ) : moodError ? (
-          <div className="text-center py-24">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gray-800/50 flex items-center justify-center"><span className="text-4xl">⚠️</span></div>
-            <p className="text-gray-400 text-lg font-medium">Failed to load mood picks</p>
-            <p className="text-gray-600 text-sm mt-2">{moodError}</p>
-          </div>
+          <EmptyState icon="⚠️" message="Failed to load mood picks" subtext={moodError} />
         ) : moodGroups.length === 0 ? (
-          <div className="text-center py-24">
-            <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gray-800/50 flex items-center justify-center"><span className="text-4xl">{MOOD_PRESETS[activeMood].icon}</span></div>
-            <p className="text-gray-400 text-lg font-medium">No results for this mood</p>
-            <p className="text-gray-600 text-sm mt-2">Try adding more movies or select a different mood</p>
-          </div>
+          <EmptyState
+            icon={MOOD_PRESETS[activeMood].icon}
+            message="No results for this mood"
+            subtext="Try adding more movies or select a different mood"
+          />
         ) : (
           <div>
             <p className="text-gray-500 text-xs mb-3">{MOOD_PRESETS[activeMood].reason} — {moodPicks.length} {moodPicks.length === 1 ? "pick" : "picks"}</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
               {moodPicks.map((r) => (
                 <div key={r.tmdb_id} className="relative group/rec">
-                  <MovieCard title={r.title} year={r.year} genre={r.genre} rating={r.rating} userRating={null} posterUrl={r.poster_url} source="tmdb" cdaUrl={r.cda_url} onClick={() => handleRecClick(r)} />
+                  <MovieCard title={r.title} year={r.year} genre={r.genre} rating={r.rating} userRating={null} posterUrl={r.poster_url} source="tmdb" cdaUrl={r.cda_url} onClick={() => handleRecClick(r, "mood")} />
                   {recActionButtons(r, true)}
                 </div>
               ))}
@@ -291,16 +295,16 @@ export default function RecommendationsView({
       ) : recsLoading ? (
         <RecommendationSkeleton />
       ) : recommendations.length === 0 ? (
-        <div className="text-center py-24">
-          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gray-800/50 flex items-center justify-center"><span className="text-4xl">🔍</span></div>
-          <p className="text-gray-400 text-lg font-medium">No recommendations found</p>
-          <p className="text-gray-600 text-sm mt-2">Try adding more movies to improve suggestions</p>
-        </div>
+        <EmptyState
+          icon="🔍"
+          message="No recommendations found"
+          subtext="Try adding more movies to improve suggestions"
+        />
       ) : recCategory === "all" ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
           {allRecommendations.map((r) => (
             <div key={r.tmdb_id} className="relative group/rec">
-              <MovieCard title={r.title} year={r.year} genre={r.genre} rating={r.rating} userRating={null} posterUrl={r.poster_url} source="tmdb" cdaUrl={r.cda_url} onClick={() => handleRecClick(r)} />
+              <MovieCard title={r.title} year={r.year} genre={r.genre} rating={r.rating} userRating={null} posterUrl={r.poster_url} source="tmdb" cdaUrl={r.cda_url} onClick={() => handleRecClick(r, findRecommendationEngine(r.tmdb_id))} />
               {recActionButtons(r)}
             </div>
           ))}
@@ -308,8 +312,7 @@ export default function RecommendationsView({
       ) : (
         <div className="space-y-4">
           {(() => {
-            const filtered = recommendations.filter((g) => g.type === recCategory);
-            const sorted = [...filtered].sort((a, b) => {
+            const sorted = recommendations.filter((g) => g.type === recCategory).sort((a, b) => {
               const ai = groupOrder.indexOf(a.reason);
               const bi = groupOrder.indexOf(b.reason);
               if (ai === -1 && bi === -1) return 0;
@@ -323,7 +326,9 @@ export default function RecommendationsView({
                 reason={group.reason}
                 type={group.type}
                 recommendations={group.recommendations}
-                onAction={handleRecAction}
+                onAction={(tmdbId, action, rec, fromMood, engine) =>
+                  handleRecAction(tmdbId, action, rec, fromMood, engine)
+                }
                 isFirst={i === 0}
                 isLast={i === sorted.length - 1}
                 onMoveUp={() => {

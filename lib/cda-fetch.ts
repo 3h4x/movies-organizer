@@ -1,9 +1,17 @@
+// tamtam inspected 2026-05-21
 import type Database from "better-sqlite3";
 import { searchTmdbPl } from "@/lib/tmdb";
 
 const CDA_BASE = "https://www.cda.pl";
+const CDA_FETCH_TIMEOUT_MS = 30000;
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+const PREMIUM_MOVIE_RE =
+  /<li class="mb-slide" title="([^"]*)">\s*<a href="([^"]*vfilm)">\s*<img[^>]*src="([^"]*)"/g;
+const CATEGORY_POSTER_RE =
+  /<img class="cover-img" title="([^"]*)"[^>]*src="([^"]*)"/g;
+const CATEGORY_TITLE_RE =
+  /<a href="(https:\/\/www\.cda\.pl\/video\/[^"]*\/vfilm)" class="kino-title">([^<]*)<\/a>/g;
 
 interface CdaMovie {
   title: string;
@@ -47,25 +55,46 @@ function hashCode(str: string): number {
   return hash;
 }
 
+async function fetchCdaHtml(
+  url: string,
+  context: string,
+  options: { logHttpFailure?: boolean } = {},
+): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT },
+      redirect: "follow",
+      signal: AbortSignal.timeout(CDA_FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) {
+      if (options.logHttpFailure) {
+        console.error(`[cda] Failed to fetch ${context}: ${res.status}`);
+      }
+      return null;
+    }
+
+    return await res.text();
+  } catch (err) {
+    console.error(`[cda] Failed to fetch ${context}:`, err);
+    return null;
+  }
+}
+
 async function scrapePremium(): Promise<CdaMovie[]> {
-  const res = await fetch(`${CDA_BASE}/premium`, {
-    headers: { "User-Agent": USER_AGENT },
-    redirect: "follow",
+  const html = await fetchCdaHtml(`${CDA_BASE}/premium`, "premium page", {
+    logHttpFailure: true,
   });
-  if (!res.ok) {
-    console.error(`[cda] Failed to fetch premium page: ${res.status}`);
+  if (html === null) {
     return [];
   }
 
-  const html = await res.text();
   const movies: CdaMovie[] = [];
   const seen = new Set<string>();
 
-  const regex =
-    /<li class="mb-slide" title="([^"]*)">\s*<a href="([^"]*vfilm)">\s*<img[^>]*src="([^"]*)"/g;
   let match;
 
-  while ((match = regex.exec(html)) !== null) {
+  PREMIUM_MOVIE_RE.lastIndex = 0;
+  while ((match = PREMIUM_MOVIE_RE.exec(html)) !== null) {
     const rawTitle = match[1];
     const url = match[2].startsWith("http")
       ? match[2]
@@ -135,21 +164,19 @@ const CATEGORIES = [
 ];
 
 async function scrapeCategory(category: string): Promise<CdaMovie[]> {
-  const res = await fetch(`${CDA_BASE}/premium/${category}`, {
-    headers: { "User-Agent": USER_AGENT },
-    redirect: "follow",
-  });
-  if (!res.ok) return [];
+  const html = await fetchCdaHtml(
+    `${CDA_BASE}/premium/${category}`,
+    `category ${category}`,
+  );
+  if (html === null) return [];
 
-  const html = await res.text();
   const movies: CdaMovie[] = [];
   const seen = new Set<string>();
 
   const posterMap = new Map<string, string>();
-  const posterRegex =
-    /<img class="cover-img" title="([^"]*)"[^>]*src="([^"]*)"/g;
   let match;
-  while ((match = posterRegex.exec(html)) !== null) {
+  CATEGORY_POSTER_RE.lastIndex = 0;
+  while ((match = CATEGORY_POSTER_RE.exec(html)) !== null) {
     const imgTitle = decodeEntities(match[1]).trim();
     const posterUrl = match[2].startsWith("//")
       ? `https:${match[2]}`
@@ -157,9 +184,8 @@ async function scrapeCategory(category: string): Promise<CdaMovie[]> {
     posterMap.set(imgTitle, posterUrl);
   }
 
-  const titleRegex =
-    /<a href="(https:\/\/www\.cda\.pl\/video\/[^"]*\/vfilm)" class="kino-title">([^<]*)<\/a>/g;
-  while ((match = titleRegex.exec(html)) !== null) {
+  CATEGORY_TITLE_RE.lastIndex = 0;
+  while ((match = CATEGORY_TITLE_RE.exec(html)) !== null) {
     const url = match[1];
     const rawTitle = decodeEntities(match[2]).trim();
 
@@ -189,20 +215,12 @@ export async function fetchAndStoreCdaMovies(db: Database.Database): Promise<voi
 
   const allMovies: CdaMovie[] = [...premiumMovies];
   const seenUrls = new Set(premiumMovies.map((m) => m.url));
-  const movieCategories = new Map<string, string[]>();
-  for (const m of premiumMovies) {
-    movieCategories.set(m.url, ["Polecane"]);
-  }
 
   for (const cat of CATEGORIES) {
     const catMovies = await scrapeCategory(cat);
     const label = CATEGORY_LABELS[cat] || cat;
     let added = 0;
     for (const m of catMovies) {
-      const cats = movieCategories.get(m.url) || [];
-      cats.push(label);
-      movieCategories.set(m.url, cats);
-
       if (!seenUrls.has(m.url)) {
         seenUrls.add(m.url);
         m.category = label;

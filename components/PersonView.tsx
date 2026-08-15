@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import MovieCard from "./MovieCard";
+import EmptyState from "@/components/ui/EmptyState";
 import type { Movie } from "@/lib/types";
 
 interface PersonRating {
@@ -83,27 +84,21 @@ export default function PersonView({
   }, [movies, nameLower]);
 
   const roles = useMemo(() => {
+    let hasDirector = false;
+    let hasWriter = false;
+    let hasActor = false;
+    const matches = (field: string | null | undefined) =>
+      field?.split(",").some((p) => p.trim().toLowerCase() === nameLower) ?? false;
+    for (const m of personMovies) {
+      if (!hasDirector && matches(m.director)) hasDirector = true;
+      if (!hasWriter && matches(m.writer)) hasWriter = true;
+      if (!hasActor && matches(m.actors)) hasActor = true;
+      if (hasDirector && hasWriter && hasActor) break;
+    }
     const r: string[] = [];
-    if (
-      personMovies.some((m) =>
-        m.director
-          ?.split(",")
-          .some((d) => d.trim().toLowerCase() === nameLower),
-      )
-    )
-      r.push("Director");
-    if (
-      personMovies.some((m) =>
-        m.writer?.split(",").some((w) => w.trim().toLowerCase() === nameLower),
-      )
-    )
-      r.push("Writer");
-    if (
-      personMovies.some((m) =>
-        m.actors?.split(",").some((a) => a.trim().toLowerCase() === nameLower),
-      )
-    )
-      r.push("Actor");
+    if (hasDirector) r.push("Director");
+    if (hasWriter) r.push("Writer");
+    if (hasActor) r.push("Actor");
     return r;
   }, [personMovies, nameLower]);
 
@@ -158,9 +153,13 @@ export default function PersonView({
 
       {/* Movie grid */}
       {personMovies.length === 0 ? (
-        <div className="text-center py-24">
-          <p className="text-gray-500 text-sm">No movies found for {name}</p>
-        </div>
+        <EmptyState
+          message={
+            <span className="text-sm font-normal text-gray-500">
+              No movies found for {name}
+            </span>
+          }
+        />
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
           {personMovies.map((m) => (

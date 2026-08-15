@@ -1,5 +1,6 @@
 import { discoverByPerson, getMovieCredits } from "../tmdb";
 import {
+  attachTrace,
   filterResults,
   type EngineContext,
   type RecommendationGroup,
@@ -41,8 +42,10 @@ export async function directorEngine(
   const minFilms = ctx.config?.director_min_films ?? 2;
   const topDirectors = [...directorCounts.entries()]
     .filter(([, v]) => v.count >= minFilms || v.avgRating >= 9)
-    .sort((a, b) => b[1].count * b[1].avgRating - a[1].count * a[1].avgRating)
-    .slice(0, 8);
+    .map((entry) => ({ entry, score: entry[1].count * entry[1].avgRating }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 8)
+    .map(({ entry }) => entry);
 
   const discoverResults = await Promise.allSettled(
     topDirectors.map(([id]) => discoverByPerson(id)),
@@ -56,7 +59,12 @@ export async function directorEngine(
       groups.push({
         reason: `More from director ${name}`,
         type: "director",
-        recommendations: filtered.slice(0, 15),
+        recommendations: attachTrace(filtered.slice(0, 15), {
+          engine: "director",
+          seedKind: "director",
+          seedId: topDirectors[i][0],
+          seedName: name,
+        }),
       });
     }
   });

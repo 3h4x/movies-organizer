@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
 import { getDb, Movie } from "@/lib/db";
 import { parseFilename, getErrorMessage } from "@/lib/utils";
+import { rateLimit } from "@/lib/rate-limit";
+import { subtitleExtensionForContent } from "@/lib/subtitles";
 import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
@@ -16,10 +18,16 @@ const VIDEO_EXTENSIONS = new Set([
   ".webm",
 ]);
 
+const UNSAFE_FILENAME_CHARS = /[\\/:*?"<>|]/g;
+
+const SUBTITLE_EXTENSIONS = new Set([".srt", ".sub", ".txt", ".ass"]);
+
 export async function POST(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const limited = rateLimit(request, "mutation");
+  if (limited) return limited;
   const { id } = await params;
   const db = getDb();
   const movieId = parseInt(id, 10);
@@ -128,9 +136,6 @@ export async function POST(
   const finalYear = movie.year || cleanedYear;
 
   // Standard format: Movie Name [Year]/Movie Name.ext
-  // Let's assume the root directory is /Volumes/video/Movies/ as per user's example
-  // or the current parent of the movie file if it's deeper.
-  // Actually, let's use the library_path setting from the DB if available.
   const setting = db
     .prepare("SELECT value FROM settings WHERE key = 'library_path'")
     .get() as { value: string } | undefined;
@@ -139,7 +144,7 @@ export async function POST(
   const libraryRoot = setting?.value || path.dirname(path.dirname(oldPath));
 
   const ext = path.extname(oldPath);
-  const safeTitle = finalTitle.replace(/[\\/:*?"<>|]/g, " ");
+  const safeTitle = finalTitle.replace(UNSAFE_FILENAME_CHARS, " ");
   const movieYear = finalYear || "";
   const folderName = movieYear ? `${safeTitle} [${movieYear}]` : safeTitle;
 
@@ -227,7 +232,7 @@ export async function POST(
 
     // If the file is missing, we check for a 'delete_missing' query param to cleanup DB
     const deleteMissing =
-      _request.nextUrl.searchParams.get("delete_missing") === "true";
+      request.nextUrl.searchParams.get("delete_missing") === "true";
     if (deleteMissing) {
       db.prepare("DELETE FROM movies WHERE id = ?").run(movieId);
       return Response.json({
@@ -358,24 +363,33 @@ export async function POST(
       const oldFileNameNoExt = path.basename(oldPath, ext);
       const filesInOldDir = await fs.readdir(oldDir);
 
-      const subtitleExts = [".srt", ".sub", ".txt", ".ass"]; // common subtitle extensions
       for (const file of filesInOldDir) {
         const fileExt = path.extname(file).toLowerCase();
         const fileNameNoExt = path.basename(file, path.extname(file));
 
         // If subtitle matches the old movie filename or starts with it
         if (
-          subtitleExts.includes(fileExt) &&
+          SUBTITLE_EXTENSIONS.has(fileExt) &&
           (fileNameNoExt === oldFileNameNoExt ||
             fileNameNoExt.startsWith(oldFileNameNoExt))
         ) {
-          // Always rename to .srt as per user request
-          const targetSubExt = ".srt";
+          const oldSubPath = path.join(oldDir, file);
+          // Name the file after what it actually contains. Forcing `.srt` here used
+          // to relabel MicroDVD payloads as SubRip, which players render as nothing.
+          let targetSubExt = fileExt;
+          try {
+            targetSubExt = subtitleExtensionForContent(
+              await fs.readFile(oldSubPath),
+              fileExt,
+            );
+          } catch (e) {
+            console.warn(`- Could not sniff subtitle format for ${file}:`, e);
+          }
           const newSubName =
             fileNameNoExt.replace(oldFileNameNoExt, finalTitle) + targetSubExt;
           const newSubPath = path.join(targetDir, newSubName);
           console.log(`- Moving subtitle: ${file} -> ${newSubName}`);
-          await fs.rename(path.join(oldDir, file), newSubPath);
+          await fs.rename(oldSubPath, newSubPath);
         }
       }
     }

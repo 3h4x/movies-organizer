@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({

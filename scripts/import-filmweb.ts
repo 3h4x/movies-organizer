@@ -3,7 +3,7 @@
  * Run once after exporting your ratings from Filmweb. Not intended for
  * repeated or scheduled use — Filmweb is not synced automatically.
  *
- * Usage: npx tsx scripts/import-filmweb.ts <path-to-json> [--enrich]
+ * Usage: pnpm dlx tsx scripts/import-filmweb.ts <path-to-json> [--enrich]
  *
  * Optionally pass --enrich to fetch TMDb poster/genre data (requires TMDB_API_KEY).
  */
@@ -64,6 +64,7 @@ async function searchTmdb(
   const url = `${TMDB_BASE}/search/movie?query=${encodeURIComponent(title)}&year=${year}&language=en-US&page=1`;
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(15000),
   });
   if (!res.ok) return null;
 
@@ -90,7 +91,7 @@ async function main() {
 
   if (!jsonPath) {
     console.error(
-      "Usage: npx tsx scripts/import-filmweb.ts <path-to-json> [--enrich]",
+      "Usage: pnpm dlx tsx scripts/import-filmweb.ts <path-to-json> [--enrich]",
     );
     process.exit(1);
   }

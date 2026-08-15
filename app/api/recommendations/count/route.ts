@@ -4,18 +4,30 @@ import {
   getRatedTmdbIds,
   getCachedEngine,
   getRecommendedMovies,
+  getMovies,
+  getSetting,
 } from "@/lib/db";
-import { engines, type RecommendationGroup } from "@/lib/engines";
+import {
+  buildContext,
+  engines,
+  type RecConfig,
+  type RecommendationGroup,
+} from "@/lib/engines";
 
 export async function GET() {
   const db = getDb();
   const dismissedIds = getDismissedIds(db);
   const ratedTmdbIds = getRatedTmdbIds(db, "movie");
-  // Match the movieCount used in recommendations/route.ts (library only, not
-  // recommendation-sourced rows) so the cache key is consistent across routes.
-  const movieCount = db
-    .prepare("SELECT COUNT(*) as c FROM movies WHERE source != 'recommendation'")
-    .get() as { c: number };
+  const allMovies = getMovies(db);
+  const movies = allMovies.filter(
+    (m) => m.source !== "recommendation" || m.wishlist,
+  );
+  const movieCount = movies.length;
+  const configRaw = getSetting(db, "rec_config");
+  const config: RecConfig | undefined = configRaw
+    ? (() => { try { return JSON.parse(configRaw); } catch { return undefined; } })()
+    : undefined;
+  let ctx: ReturnType<typeof buildContext> | null = null;
   let total = 0;
 
   for (const [key, def] of Object.entries(engines)) {
@@ -27,8 +39,16 @@ export async function GET() {
       ).length;
     } else {
       // Count from cache if available
-      const cached = getCachedEngine<RecommendationGroup>(db, key, movieCount.c);
-      if (cached) {
+      if (def.cacheKey && !ctx) ctx = buildContext(movies, dismissedIds, config);
+      const cacheKey = def.cacheKey && ctx ? def.cacheKey(ctx) : key;
+      const cacheMovieCount = def.cacheKey ? 0 : movieCount;
+      const cached = getCachedEngine<RecommendationGroup>(
+        db,
+        cacheKey,
+        cacheMovieCount,
+        def.cacheMaxAgeHours ?? 24,
+      );
+      if (cached && (def.cacheEmptyResults !== false || cached.length > 0)) {
         for (const group of cached) {
           total += (group.recommendations || []).filter(
             (r) =>

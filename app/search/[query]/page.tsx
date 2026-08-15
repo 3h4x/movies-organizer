@@ -1,22 +1,25 @@
 "use client";
+// tamtam inspected 2026-05-21
 
 import { useState, useEffect, use } from "react";
 import { useRouter } from "next/navigation";
+import CardActionStack from "@/components/CardActionStack";
 import MovieCard from "@/components/MovieCard";
-
-interface SearchResult {
-  title: string;
-  year: number | null;
-  genre: string;
-  rating: number;
-  poster_url: string | null;
-  tmdb_id: number;
-  imdb_id: string | null;
-}
+import {
+  CARD_ACTION_ICON_SIZE_CLASS,
+  CARD_ACTION_TOUCH_TARGET_CLASS,
+} from "@/components/card-action-styles";
+import EmptyState from "@/components/ui/EmptyState";
+import Spinner from "@/components/ui/Spinner";
+import type { TmdbSearchResult } from "@/lib/tmdb";
 
 interface LibraryMovie {
   tmdb_id: number | null;
 }
+
+const ACTION_BASE_CLASS = `backdrop-blur-sm text-white rounded-lg ${CARD_ACTION_TOUCH_TARGET_CLASS} ${CARD_ACTION_ICON_SIZE_CLASS} flex items-center justify-center transition-colors`;
+const ADD_TO_LIBRARY_CLASS = `bg-indigo-600/95 ${ACTION_BASE_CLASS} hover:bg-indigo-500`;
+const ADD_TO_WATCHLIST_CLASS = `bg-blue-600/95 ${ACTION_BASE_CLASS} hover:bg-blue-500`;
 
 export default function SearchPage({
   params,
@@ -27,10 +30,10 @@ export default function SearchPage({
   const decoded = decodeURIComponent(query);
   const router = useRouter();
 
-  const [results, setResults] = useState<SearchResult[]>([]);
-  const [library, setLibrary] = useState<Set<number>>(new Set());
+  const [results, setResults] = useState<TmdbSearchResult[]>([]);
+  const [library, setLibrary] = useState<Set<number>>(() => new Set());
   const [loading, setLoading] = useState(true);
-  const [added, setAdded] = useState<Set<number>>(new Set());
+  const [added, setAdded] = useState<Set<number>>(() => new Set());
 
   useEffect(() => {
     async function load() {
@@ -42,14 +45,18 @@ export default function SearchPage({
       if (searchRes.ok) setResults(await searchRes.json());
       if (libRes.ok) {
         const movies: LibraryMovie[] = await libRes.json();
-        setLibrary(new Set(movies.map((m) => m.tmdb_id).filter(Boolean) as number[]));
+        const tmdbIds: number[] = [];
+        for (const movie of movies) {
+          if (movie.tmdb_id) tmdbIds.push(movie.tmdb_id);
+        }
+        setLibrary(new Set(tmdbIds));
       }
       setLoading(false);
     }
     load();
   }, [decoded]);
 
-  async function addMovie(result: SearchResult, wishlist: boolean) {
+  async function addMovie(result: TmdbSearchResult, wishlist: boolean) {
     await fetch("/api/movies", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -92,20 +99,24 @@ export default function SearchPage({
         {/* Results */}
         {loading ? (
           <div className="flex items-center justify-center py-24">
-            <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+            <Spinner />
           </div>
         ) : results.length === 0 ? (
-          <div className="text-center py-24">
-            <p className="text-gray-400 text-lg font-medium">No results for &ldquo;{decoded}&rdquo;</p>
-            <p className="text-gray-600 text-sm mt-2">Try a different title or check spelling</p>
-          </div>
+          <EmptyState
+            message={
+              <>
+                No results for &ldquo;{decoded}&rdquo;
+              </>
+            }
+            subtext="Try a different title or check spelling"
+          />
         ) : (
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
             {results.map((r) => {
               const inLibrary = library.has(r.tmdb_id);
               const justAdded = added.has(r.tmdb_id);
               return (
-                <div key={r.tmdb_id} className="relative group/card">
+                <div key={r.tmdb_id} className="relative group/rec">
                   <MovieCard
                     title={r.title}
                     year={r.year}
@@ -120,24 +131,24 @@ export default function SearchPage({
                       {justAdded ? "Added" : "In library"}
                     </div>
                   ) : (
-                    <div className="absolute bottom-14 right-1 flex flex-col gap-1 rounded-xl border border-gray-800/70 bg-black/35 p-1 opacity-100 shadow-lg backdrop-blur-sm transition-all duration-200 sm:border-transparent sm:bg-transparent sm:p-0 sm:opacity-0 sm:shadow-none sm:backdrop-blur-0 sm:group-hover/card:opacity-100">
-                      <button
-                        onClick={() => addMovie(r, false)}
-                        aria-label={`Add ${r.title} to library`}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600/95 text-sm text-white transition-colors hover:bg-indigo-500 sm:h-7 sm:w-7"
-                        title="Add to library"
-                      >
-                        ➕
-                      </button>
-                      <button
-                        onClick={() => addMovie(r, true)}
-                        aria-label={`Add ${r.title} to watchlist`}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600/95 text-sm text-white transition-colors hover:bg-blue-500 sm:h-7 sm:w-7"
-                        title="Add to watchlist"
-                      >
-                        🔖
-                      </button>
-                    </div>
+                    <CardActionStack
+                      actions={[
+                        {
+                          key: "library",
+                          label: `Add ${r.title} to library`,
+                          icon: "➕",
+                          className: ADD_TO_LIBRARY_CLASS,
+                          onClick: () => addMovie(r, false),
+                        },
+                        {
+                          key: "watchlist",
+                          label: `Add ${r.title} to watchlist`,
+                          icon: "🔖",
+                          className: ADD_TO_WATCHLIST_CLASS,
+                          onClick: () => addMovie(r, true),
+                        },
+                      ]}
+                    />
                   )}
                 </div>
               );

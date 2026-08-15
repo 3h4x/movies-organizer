@@ -1,7 +1,10 @@
 "use client";
+// tamtam inspected 2026-05-21
 import ConfigPanel from "@/components/ConfigPanel";
 import type { RecConfig, RecommendationGroup } from "@/lib/types";
 import { REC_CATEGORIES } from "@/lib/types";
+
+const REC_ENGINE_CATEGORIES = REC_CATEGORIES.slice(1);
 
 interface ConfigViewProps {
   recConfig: RecConfig;
@@ -17,6 +20,7 @@ interface ConfigViewProps {
   setRecGroups: React.Dispatch<
     React.SetStateAction<Record<string, RecommendationGroup[]>>
   >;
+  onOpenMovie: (id: number) => void;
 }
 
 export default function ConfigView({
@@ -31,8 +35,9 @@ export default function ConfigView({
   addToast,
   fetchEngine,
   setRecGroups,
+  onOpenMovie,
 }: ConfigViewProps) {
-  async function handleSaveLibraryPath(path: string) {
+  async function handleSaveLibraryPath(path: string): Promise<boolean> {
     const res = await fetch("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -40,10 +45,11 @@ export default function ConfigView({
     });
     if (res.ok) {
       setLibraryPath(path || null);
-    } else {
-      const data = await res.json().catch(() => ({}));
-      addToast(data.error || "Failed to save library path");
+      return true;
     }
+    const data = await res.json().catch(() => ({}));
+    addToast(data.error || "Failed to save library path");
+    return false;
   }
 
   async function handleSaveConfig(cfg: RecConfig) {
@@ -60,9 +66,9 @@ export default function ConfigView({
     setRecConfig(cfg);
     addToast("Config saved — refreshing recommendations");
     setRecGroups({});
-    REC_CATEGORIES.slice(1)
-      .filter((c) => !disabledEngines.includes(c.value))
-      .forEach((c) => fetchEngine(c.value, true));
+    for (const c of REC_ENGINE_CATEGORIES) {
+      if (!disabledEngines.includes(c.value)) fetchEngine(c.value, true);
+    }
   }
 
   async function handleToggleEngine(engineKey: string) {
@@ -91,12 +97,14 @@ export default function ConfigView({
       config={recConfig}
       tmdbKeySource={tmdbKeySource}
       disabledEngines={disabledEngines}
-      engines={REC_CATEGORIES.slice(1)}
+      engines={REC_ENGINE_CATEGORIES}
       libraryPath={libraryPath}
       onSaveLibraryPath={handleSaveLibraryPath}
       onSync={() => setSyncOpen(true)}
       onSave={handleSaveConfig}
       onToggleEngine={handleToggleEngine}
+      onOpenMovie={onOpenMovie}
+      addToast={addToast}
     />
   );
 }

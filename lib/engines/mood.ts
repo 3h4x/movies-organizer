@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 import { discoverByMood } from "../tmdb";
 import type { TmdbSearchResult } from "../tmdb";
 import { filterResults, type EngineContext, type RecommendationGroup } from "./index";
@@ -12,8 +13,8 @@ export async function moodEngine(
 
   if (preset.comfortRewatch) {
     const picks = ctx.library
-      .filter((m) => m.tmdb_id && !ctx.dismissedIds.has(m.tmdb_id))
       .filter((m) => {
+        if (!m.tmdb_id || ctx.dismissedIds.has(m.tmdb_id)) return false;
         if (m.user_rating != null && m.user_rating >= 8) return true;
         if ((m.user_rating == null || m.user_rating === 0) && m.rating != null && m.rating >= 7) return true;
         return false;

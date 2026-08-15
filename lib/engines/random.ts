@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 import type { EngineContext, RecommendationGroup } from "./index";
 
 export async function randomEngine(
@@ -9,14 +10,15 @@ export async function randomEngine(
   );
   if (candidates.length === 0) return [];
 
-  // Fisher-Yates shuffle a copy
+  // Fisher-Yates only the returned prefix.
   const shuffled = [...candidates];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+  const pickCount = Math.min(15, shuffled.length);
+  for (let i = 0; i < pickCount; i++) {
+    const j = i + Math.floor(Math.random() * (shuffled.length - i));
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
 
-  const picks = shuffled.slice(0, 15).map((m) => ({
+  const picks = shuffled.slice(0, pickCount).map((m) => ({
     tmdb_id: m.tmdb_id!,
     title: m.title,
     year: m.year,

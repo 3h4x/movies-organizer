@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 import path from "path";
 import fs from "fs";
 import Database from "better-sqlite3";

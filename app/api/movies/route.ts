@@ -1,14 +1,21 @@
 import { NextRequest } from "next/server";
-import { getDb, getMovies, insertMovie, type MovieInput } from "@/lib/db";
+import { getDb, getMovies, getDetachedMovies, insertMovie, type MovieInput } from "@/lib/db";
+import { rateLimit } from "@/lib/rate-limit";
 
 export async function GET(request: NextRequest) {
   const db = getDb();
+  if (request.nextUrl.searchParams.get("detached") === "1") {
+    return Response.json(getDetachedMovies(db));
+  }
   const type = request.nextUrl.searchParams.get("type") || undefined;
-  const movies = getMovies(db, type);
+  const query = request.nextUrl.searchParams.get("q")?.trim() || undefined;
+  const movies = getMovies(db, type, query);
   return Response.json(movies);
 }
 
 export async function POST(request: NextRequest) {
+  const limited = rateLimit(request, "mutation");
+  if (limited) return limited;
   const db = getDb();
   const body = await request.json();
 

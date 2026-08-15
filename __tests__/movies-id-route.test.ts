@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 import Database from "better-sqlite3";
@@ -398,6 +399,25 @@ describe("movies/[id] GET handler", () => {
     expect(body.metadata).toBeNull();
   });
 
+  it("returns null metadata when file_path points to a missing file", async () => {
+    const missingFilePath = path.join(__dirname, "missing-video-file.mkv");
+    db.prepare("UPDATE movies SET file_path = ? WHERE id = ?").run(
+      missingFilePath,
+      movieId,
+    );
+
+    vi.mocked(getTmdbMovieDetails).mockResolvedValueOnce({
+      director: "Christopher Nolan",
+      writer: "Christopher Nolan",
+      actors: "Matthew McConaughey",
+    });
+
+    const res = await GET(getReq(movieId), makeParams(movieId));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.metadata).toBeNull();
+  });
+
   it("returns null metadata when video_metadata contains invalid JSON", async () => {
     db.prepare("UPDATE movies SET video_metadata = ? WHERE id = ?").run(
       "not-valid-json{",
@@ -455,14 +475,51 @@ describe("movies/[id] GET handler", () => {
     expect(row.actors).toBe("Matthew McConaughey, Anne Hathaway");
   });
 
-  it("skips credits enrichment when director, writer, and actors are all set", async () => {
+  it("skips TMDb detail enrichment when credits and collection metadata are all set", async () => {
     db.prepare(
-      "UPDATE movies SET director = ?, writer = ?, actors = ? WHERE id = ?",
-    ).run("Christopher Nolan", "Christopher Nolan", "Matthew McConaughey", movieId);
+      "UPDATE movies SET director = ?, writer = ?, actors = ?, tmdb_collection_id = ?, tmdb_collection_name = ?, tmdb_collection_checked = ? WHERE id = ?",
+    ).run(
+      "Christopher Nolan",
+      "Christopher Nolan",
+      "Matthew McConaughey",
+      119,
+      "Interstellar Collection",
+      1,
+      movieId,
+    );
 
     const res = await GET(getReq(movieId), makeParams(movieId));
     expect(res.status).toBe(200);
     expect(vi.mocked(getTmdbMovieDetails)).not.toHaveBeenCalled();
+  });
+
+  it("marks absent collection metadata as checked and does not refetch details", async () => {
+    db.prepare(
+      "UPDATE movies SET director = ?, writer = ?, actors = ? WHERE id = ?",
+    ).run("Christopher Nolan", "Christopher Nolan", "Matthew McConaughey", movieId);
+    vi.mocked(getTmdbMovieDetails).mockResolvedValueOnce({
+      director: null,
+      writer: null,
+      actors: null,
+      tmdb_collection_checked: true,
+    });
+
+    const first = await GET(getReq(movieId), makeParams(movieId));
+    expect(first.status).toBe(200);
+    const row = db
+      .prepare("SELECT tmdb_collection_id, tmdb_collection_name, tmdb_collection_checked FROM movies WHERE id = ?")
+      .get(movieId) as {
+        tmdb_collection_id: number | null;
+        tmdb_collection_name: string | null;
+        tmdb_collection_checked: number;
+      };
+    expect(row.tmdb_collection_id).toBeNull();
+    expect(row.tmdb_collection_name).toBeNull();
+    expect(row.tmdb_collection_checked).toBe(1);
+
+    const second = await GET(getReq(movieId), makeParams(movieId));
+    expect(second.status).toBe(200);
+    expect(vi.mocked(getTmdbMovieDetails)).toHaveBeenCalledTimes(1);
   });
 
   it("auto-links TMDb when tmdb_id is null and searchTmdb finds a match", async () => {
@@ -638,6 +695,34 @@ describe("movies/[id] GET handler", () => {
     // DB is unchanged
     const row = db.prepare("SELECT director FROM movies WHERE id = ?").get(movieId) as { director: string | null };
     expect(row.director).toBeNull();
+  });
+
+  it("persists TMDb collection metadata during detail enrichment", async () => {
+    vi.mocked(getTmdbMovieDetails).mockResolvedValueOnce({
+      director: null,
+      writer: null,
+      actors: null,
+      tmdb_collection_id: 10,
+      tmdb_collection_name: "Star Wars Collection",
+      tmdb_collection_checked: true,
+    });
+
+    const res = await GET(getReq(movieId), makeParams(movieId));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.movie.tmdb_collection_id).toBe(10);
+    expect(body.movie.tmdb_collection_name).toBe("Star Wars Collection");
+
+    const row = db
+      .prepare("SELECT tmdb_collection_id, tmdb_collection_name, tmdb_collection_checked FROM movies WHERE id = ?")
+      .get(movieId) as {
+        tmdb_collection_id: number;
+        tmdb_collection_name: string;
+        tmdb_collection_checked: number;
+      };
+    expect(row.tmdb_collection_id).toBe(10);
+    expect(row.tmdb_collection_name).toBe("Star Wars Collection");
+    expect(row.tmdb_collection_checked).toBe(1);
   });
 
   it("enriches pl_title and description when movie has tmdb_id but both are missing", async () => {

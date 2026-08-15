@@ -1,3 +1,4 @@
+<!-- tamtam inspected 2026-05-21 -->
 MIT License
 
 Copyright (c) 2019 Krishnakanth Alagiri

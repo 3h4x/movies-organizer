@@ -1,7 +1,10 @@
 "use client";
+// tamtam inspected 2026-05-21
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createLatestOnlyRunner } from "@/lib/latest-only-runner";
+import EmptyState from "@/components/ui/EmptyState";
+import Spinner from "@/components/ui/Spinner";
 
 // Polsat Box S — film channels with good quality/quantity balance
 const BOX_S_CHANNELS = [
@@ -54,10 +57,11 @@ function epgWords(name: string): string[] {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
 }
 
+const BOX_S_CHANNEL_WORDS = BOX_S_CHANNELS.map(epgWords);
+
 function matchesBoxS(epgName: string): boolean {
   const ew = epgWords(epgName);
-  for (const ch of BOX_S_CHANNELS) {
-    const bw = epgWords(ch);
+  for (const bw of BOX_S_CHANNEL_WORDS) {
     if (!bw.length || ew.length < bw.length) continue;
     if (!bw.every((w, i) => ew[i] === w)) continue;
     // Extra words in EPG name must all be harmless suffixes (HD, TV, 4K, etc.)
@@ -250,36 +254,40 @@ export default function TvTab() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
-        <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+        <Spinner />
       </div>
     );
   }
 
   if (data?.error) {
     return (
-      <div className="text-center py-24 space-y-3">
-        <p className="text-gray-400 font-medium">Failed to load TV guide</p>
-        <p className="text-gray-600 text-sm">{data.error}</p>
-        <p className="text-gray-700 text-xs">
-          Check the EPG source in Config (TV → EPG Source)
-        </p>
+      <EmptyState
+        message="Failed to load TV guide"
+        subtext={(
+          <>
+            <span>{data.error}</span>
+            <span className="mt-1 block text-xs text-gray-700">
+              Check the EPG source in Config (TV → EPG Source)
+            </span>
+          </>
+        )}
+      >
         <button
           onClick={() => load(true)}
-          className="mt-2 px-4 py-2 rounded-lg bg-gray-700 text-gray-300 text-sm hover:bg-gray-600 transition-colors"
+          className="mt-2 min-h-11 rounded-lg bg-gray-700 px-4 py-2 text-sm text-gray-300 transition-colors hover:bg-gray-600"
         >
           Retry
         </button>
-      </div>
+      </EmptyState>
     );
   }
 
   const programs = data?.programs ?? [];
   const channels = data?.channels ?? [];
+  const programChannelIds = new Set(programs.map((p) => p.channel));
 
   // Only channels that have any programs today
-  const withPrograms = channels.filter((ch) =>
-    programs.some((p) => p.channel === ch.id),
-  );
+  const withPrograms = channels.filter((ch) => programChannelIds.has(ch.id));
 
   // Deduplicate SD/HD pairs — prefer HD, keep one per base name
   const seenBase = new Set<string>();
@@ -341,7 +349,7 @@ export default function TvTab() {
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter channels..."
           aria-label="Filter TV channels"
-          className="bg-gray-800/40 text-white text-sm pl-8 pr-3 py-1.5 rounded-lg border border-gray-700/50 focus:outline-none focus:border-indigo-500/50 placeholder-gray-600 w-44"
+          className="h-11 w-44 rounded-lg border border-gray-700/50 bg-gray-800/40 pl-8 pr-3 text-sm text-white placeholder-gray-600 focus:border-indigo-500/50 focus:outline-none"
         />
       </div>
 
@@ -359,7 +367,7 @@ export default function TvTab() {
         onClick={() => load(true)}
         title="Refresh EPG cache"
         aria-label="Refresh TV guide"
-        className="flex h-10 w-10 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-gray-300"
+        className="flex h-11 w-11 items-center justify-center rounded-lg text-gray-600 transition-colors hover:bg-white/[0.04] hover:text-gray-300"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -370,10 +378,11 @@ export default function TvTab() {
 
   // Films table view
   {
-    const nowFilms = filmRows.filter(
-      (p) => new Date(p.start) <= now && new Date(p.stop) > now,
-    );
-    const upcomingFilms = filmRows.filter((p) => new Date(p.start) > now);
+    // filmRows is sorted by start ascending and pre-filtered to stop > now,
+    // so a single split point separates now-playing from upcoming films.
+    const splitIndex = filmRows.findIndex((p) => new Date(p.start) > now);
+    const nowFilms = splitIndex === -1 ? filmRows : filmRows.slice(0, splitIndex);
+    const upcomingFilms = splitIndex === -1 ? [] : filmRows.slice(splitIndex);
 
     const renderRow = (p: EpgProgram, isNow: boolean) => {
       const isSoon =
@@ -400,7 +409,7 @@ export default function TvTab() {
               : "hover:bg-white/[0.02]"
           }`}
         >
-          <div className="px-4 py-3 md:hidden">
+          <div data-testid="tv-mobile-row" className="px-4 py-3 md:hidden">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1 space-y-2">
                 <div className="flex items-center gap-2 text-[11px] text-gray-500">
@@ -418,9 +427,9 @@ export default function TvTab() {
                     {channelLabel(ch?.name ?? p.channel)}
                   </span>
                 </div>
-                <div className="flex items-baseline gap-2">
+                <div className="flex min-w-0 items-baseline gap-2">
                   <span
-                    className={`font-medium text-sm leading-snug ${isNow ? "text-white" : "text-gray-200"}`}
+                    className={`min-w-0 break-words text-sm font-medium leading-snug ${isNow ? "text-white" : "text-gray-200"}`}
                   >
                     {p.title}
                   </span>
@@ -479,14 +488,17 @@ export default function TvTab() {
                 onClick={() => blacklistChannel(p.channel)}
                 title={`Hide ${channelLabel(ch?.name ?? p.channel)}`}
                 aria-label={`Hide channel ${channelLabel(ch?.name ?? p.channel)}`}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-gray-600 transition-all hover:bg-white/[0.06] hover:text-gray-300"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-sm text-gray-600 transition-all hover:bg-white/[0.06] hover:text-gray-300 focus-visible:bg-white/[0.06] focus-visible:text-gray-200"
               >
                 ×
               </button>
             </div>
           </div>
 
-          <div className="hidden md:grid md:grid-cols-[6rem_1fr_4.5rem_10rem_2.5rem] md:gap-x-4 md:items-center md:px-4 md:py-2.5">
+          <div
+            data-testid="tv-desktop-row"
+            className="hidden md:grid md:grid-cols-[6rem_1fr_4.5rem_10rem_3rem] md:gap-x-4 md:items-center md:px-4 md:py-2.5"
+          >
             <div className="tabular-nums shrink-0">
               {isNow ? (
                 <div>
@@ -572,7 +584,7 @@ export default function TvTab() {
                 onClick={() => blacklistChannel(p.channel)}
                 title={`Hide ${channelLabel(ch?.name ?? p.channel)}`}
                 aria-label={`Hide channel ${channelLabel(ch?.name ?? p.channel)}`}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-700 opacity-0 transition-all group-hover:opacity-100 hover:bg-white/[0.06] hover:text-gray-300"
+                className="flex h-11 w-11 items-center justify-center rounded-lg text-sm text-gray-700 opacity-60 transition-all group-hover:opacity-100 hover:bg-white/[0.06] hover:text-gray-300 focus-visible:bg-white/[0.06] focus-visible:text-gray-200 focus-visible:opacity-100"
               >
                 ×
               </button>
@@ -586,13 +598,15 @@ export default function TvTab() {
       <div>
         {toolbar}
         {filmRows.length === 0 ? (
-          <div className="text-center py-16 text-gray-600">
-            No films scheduled today
-          </div>
+          <EmptyState
+            variant="plain"
+            className="!py-16"
+            message="No films scheduled today"
+          />
         ) : (
           <div>
             {/* Column headers */}
-            <div className="hidden md:grid md:grid-cols-[6rem_1fr_4.5rem_10rem_2.5rem] md:gap-x-4 md:px-4 md:pb-2 border-b border-gray-800/60">
+            <div className="hidden md:grid md:grid-cols-[6rem_1fr_4.5rem_10rem_3rem] md:gap-x-4 md:px-4 md:pb-2 border-b border-gray-800/60">
               {["Time", "Film", "Rating", "Channel", ""].map((h) => (
                 <span
                   key={h}

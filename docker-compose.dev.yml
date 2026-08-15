@@ -1,9 +1,10 @@
+# tamtam inspected 2026-05-21
 services:
   filmpick-dev:
     image: node:24-alpine
     container_name: filmpick-dev
     working_dir: /app
-    command: sh -c "corepack enable && corepack prepare pnpm@10.33.2 --activate && pnpm install --frozen-lockfile && pnpm exec next dev --port 4000"
+    command: sh -c "corepack enable && corepack prepare pnpm@10.33.2 --activate && pnpm install --frozen-lockfile && pnpm exec node scripts/ensure-native-abi.mjs && pnpm exec next dev --port 4000"
     ports:
       - "4000:4000"
     volumes:

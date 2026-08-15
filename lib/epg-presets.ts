@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 export const DEFAULT_EPG_URL =
   "https://epgshare01.online/epgshare01/epg_ripper_PL1.xml.gz";
 

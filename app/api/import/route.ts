@@ -13,9 +13,12 @@ import { linkToExistingPathlessRow } from "@/lib/pathless-row-link";
 import { scanDirectoryGenerator } from "@/lib/scanner";
 import { searchTmdb } from "@/lib/tmdb";
 import { selectTmdbSearchCandidates } from "@/lib/tmdb-match";
+import { rateLimit } from "@/lib/rate-limit";
 import fs from "fs";
 
 export async function POST(request: NextRequest) {
+  const limited = rateLimit(request, "mutation");
+  if (limited) return limited;
   const { path: dirPath } = await request.json();
 
   if (!dirPath || typeof dirPath !== "string") {

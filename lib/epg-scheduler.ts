@@ -1,26 +1,33 @@
+// tamtam inspected 2026-05-21
 import type Database from "better-sqlite3";
 import { getSetting, setSetting } from "@/lib/db";
 import { fetchAndCacheEpg } from "@/lib/epg-fetch";
 
 let activeTimer: ReturnType<typeof setInterval> | null = null;
+let shutdownHandlerInstalled = false;
 
-export function runEpgRefreshNow(db: Database.Database): void {
-  if (getSetting(db, "epg_status") === "running") return;
-
-  fetchAndCacheEpg(db)
-    .then(() => {
-      console.log("[epg] Refresh complete");
-    })
-    .catch((err) => {
-      console.error("[epg] Refresh failed:", err);
-    });
-}
-
-export function rescheduleEpgJob(db: Database.Database): void {
+function clearEpgTimer(): void {
   if (activeTimer !== null) {
     clearInterval(activeTimer);
     activeTimer = null;
   }
+}
+
+export function runEpgRefreshNow(db: Database.Database): void {
+  if (getSetting(db, "epg_status") === "running") return;
+
+  void (async () => {
+    try {
+      await fetchAndCacheEpg(db);
+      console.log("[epg] Refresh complete");
+    } catch (err) {
+      console.error("[epg] Refresh failed:", err);
+    }
+  })();
+}
+
+export function rescheduleEpgJob(db: Database.Database): void {
+  clearEpgTimer();
 
   const enabled = getSetting(db, "epg_enabled");
   if (enabled === "false") return;
@@ -36,6 +43,11 @@ export function rescheduleEpgJob(db: Database.Database): void {
 }
 
 export function initEpgScheduler(db: Database.Database): void {
+  if (!shutdownHandlerInstalled) {
+    process.once("SIGTERM", clearEpgTimer);
+    shutdownHandlerInstalled = true;
+  }
+
   if (getSetting(db, "epg_status") === "running") {
     setSetting(db, "epg_status", "idle");
   }

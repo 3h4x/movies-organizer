@@ -1,17 +1,21 @@
+// tamtam inspected 2026-05-21
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { NextRequest } from "next/server";
 import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
-import { initDb, setCachedEngine, setSetting, saveRecommendedMovies, updateRecommendedMovie } from "@/lib/db";
-import type { RecommendationGroup } from "@/lib/engines";
+import { getCachedEngine, initDb, insertMovie, setCachedEngine, setSetting, saveRecommendedMovies, updateRecommendedMovie } from "@/lib/db";
+import type { Movie } from "@/lib/db";
+import type { EngineContext, RecommendationGroup } from "@/lib/engines";
 import type { TmdbSearchResult } from "@/lib/tmdb";
 
 // Hoist mock functions so they can be referenced inside vi.mock factories.
-const { mockGenreEngine, mockCdaEngine, mockNoCacheEngine } = vi.hoisted(() => ({
+const { mockGenreEngine, mockCdaEngine, mockNoCacheEngine, mockAiEngine, mockFranchiseEngine } = vi.hoisted(() => ({
   mockGenreEngine: vi.fn<() => Promise<RecommendationGroup[]>>(),
   mockCdaEngine: vi.fn<() => Promise<RecommendationGroup[]>>(),
   mockNoCacheEngine: vi.fn<() => Promise<RecommendationGroup[]>>(),
+  mockAiEngine: vi.fn<() => Promise<RecommendationGroup[]>>(),
+  mockFranchiseEngine: vi.fn<() => Promise<RecommendationGroup[]>>(),
 }));
 
 // Replace the engines module with three engines: one regular (genre), one
@@ -20,14 +24,39 @@ const { mockGenreEngine, mockCdaEngine, mockNoCacheEngine } = vi.hoisted(() => (
 vi.mock("@/lib/engines", () => ({
   engines: {
     genre: { name: "By Genre", icon: "🎭", engine: mockGenreEngine, dbBacked: false },
+    ai: {
+      name: "For You",
+      icon: "✨",
+      engine: mockAiEngine,
+      cacheKey: () => "ai:test-profile",
+      cacheMaxAgeHours: 24 * 7,
+      cacheEmptyResults: false,
+    },
     cda: { name: "On CDA", icon: "📺", engine: mockCdaEngine, dbBacked: true },
     random: { name: "Surprise Me", icon: "🎲", engine: mockNoCacheEngine, noCache: true },
+    franchise: {
+      name: "Franchises",
+      icon: "🎞️",
+      engine: mockFranchiseEngine,
+      cacheKey: (ctx: EngineContext) => {
+        const ids = [...ctx.libraryTmdbIds].sort((a, b) => a - b).join(",");
+        const collections = ctx.library
+          .filter((movie) => movie.tmdb_collection_id && movie.tmdb_collection_name)
+          .map((movie) => `${movie.tmdb_collection_id}:${movie.tmdb_collection_name}`)
+          .sort()
+          .join("|");
+        return `franchise:${ids}:${collections}`;
+      },
+      cacheEmptyResults: false,
+    },
   },
-  buildContext: vi.fn((_library, dismissedIds, config) => ({
-    library: [],
+  buildContext: vi.fn((library: Movie[], dismissedIds, config) => ({
+    library,
     dismissedIds,
-    libraryTmdbIds: new Set<number>(),
-    libraryTitles: new Set<string>(),
+    libraryTmdbIds: new Set(
+      library.map((movie) => movie.tmdb_id).filter(Boolean),
+    ),
+    libraryTitles: new Set(library.map((movie) => movie.title.toLowerCase())),
     config,
   })),
   getCdaLookup: vi.fn(() => ({
@@ -36,9 +65,10 @@ vi.mock("@/lib/engines", () => ({
   })),
   // Return results unchanged so we can assert on raw engine output.
   enrichWithCda: vi.fn((results: TmdbSearchResult[]) => results),
+  overrideTraceSource: vi.fn((groups: RecommendationGroup[]) => groups),
 }));
 
-// Patch only getDb; every other DB function runs against the real in-memory DB.
+// Patch only getDb; every other DB function runs against the real test DB.
 vi.mock("@/lib/db", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/db")>();
   return { ...actual, getDb: vi.fn() };
@@ -79,6 +109,8 @@ describe("recommendations GET handler", () => {
     mockGenreEngine.mockResolvedValue([]);
     mockCdaEngine.mockResolvedValue([]);
     mockNoCacheEngine.mockResolvedValue([]);
+    mockAiEngine.mockResolvedValue([]);
+    mockFranchiseEngine.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -138,6 +170,74 @@ describe("recommendations GET handler", () => {
 
     expect(mockGenreEngine).not.toHaveBeenCalled();
     expect(data[0].reason).toBe("Cached Group");
+  });
+
+  it("does not store empty cache entries for engines that disable empty caching", async () => {
+    mockAiEngine.mockResolvedValue([]);
+
+    const res = await GET(req({ engine: "ai" }));
+    const data = await res.json();
+
+    expect(data).toEqual([]);
+    expect(mockAiEngine).toHaveBeenCalledOnce();
+    expect(getCachedEngine(db, "ai:test-profile", 0, 24 * 7)).toBeNull();
+  });
+
+  it("bypasses empty cached groups for engines that disable empty caching", async () => {
+    setCachedEngine(db, "ai:test-profile", [], 0);
+    const fresh = makeGroup(
+      { type: "ai", reason: "For you" },
+      [makeRec({ tmdb_id: 2300, title: "Aftersun" })],
+    );
+    mockAiEngine.mockResolvedValue([fresh]);
+
+    const res = await GET(req({ engine: "ai" }));
+    const data = await res.json();
+
+    expect(mockAiEngine).toHaveBeenCalledOnce();
+    expect(data[0].recommendations[0].title).toBe("Aftersun");
+    expect(getCachedEngine<RecommendationGroup>(db, "ai:test-profile", 0, 24 * 7)).toEqual([fresh]);
+  });
+
+  it("does not let an empty franchise cache hide later collection recommendations", async () => {
+    const movieId = insertMovie(db, {
+      title: "Star Wars",
+      year: 1977,
+      genre: "Adventure",
+      director: null,
+      rating: 8.2,
+      poster_url: null,
+      source: "tmdb",
+      imdb_id: null,
+      tmdb_id: 11,
+      type: "movie",
+    });
+
+    const empty = await GET(req({ engine: "franchise" }));
+    expect(await empty.json()).toEqual([]);
+    expect(mockFranchiseEngine).toHaveBeenCalledOnce();
+    expect(getCachedEngine(db, "franchise:11:", 0)).toBeNull();
+
+    db.prepare(
+      "UPDATE movies SET tmdb_collection_id = ?, tmdb_collection_name = ?, tmdb_collection_checked = ? WHERE id = ?",
+    ).run(10, "Star Wars Collection", 1, movieId);
+    const fresh = makeGroup(
+      { type: "franchise", reason: "Complete Star Wars Collection" },
+      [makeRec({ tmdb_id: 1891, title: "The Empire Strikes Back" })],
+    );
+    mockFranchiseEngine.mockResolvedValueOnce([fresh]);
+
+    const filled = await GET(req({ engine: "franchise" }));
+    const data = await filled.json();
+
+    expect(mockFranchiseEngine).toHaveBeenCalledTimes(2);
+    expect(data[0].reason).toBe("Complete Star Wars Collection");
+    expect(data[0].recommendations[0].title).toBe("The Empire Strikes Back");
+    expect(getCachedEngine<RecommendationGroup>(
+      db,
+      "franchise:11:10:Star Wars Collection",
+      0,
+    )).toEqual([fresh]);
   });
 
   // ── Single engine: expired TTL → bypass cache ────────────────────────────

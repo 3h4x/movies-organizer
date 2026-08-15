@@ -9,9 +9,13 @@ interface PathlessRow {
   year: number | null;
 }
 
-type PathlessRowTmdbMatch = Pick<
-  MovieInput,
-  "genre" | "imdb_id" | "poster_url" | "rating" | "tmdb_id" | "year"
+// Every field is optional: callers frequently know only the tmdb_id, and the
+// link path already falls back per field when one is missing.
+type PathlessRowTmdbMatch = Partial<
+  Pick<
+    MovieInput,
+    "genre" | "imdb_id" | "poster_url" | "rating" | "tmdb_id" | "year"
+  >
 >;
 
 // Try to attach a scanned file to an existing pathless DB row before

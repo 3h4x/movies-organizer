@@ -1,6 +1,13 @@
+<!-- tamtam inspected 2026-05-21 -->
 <h1 align="center">FilmPick</h1>
 
 <p align="center">Your personal movie discovery engine. Tracks what you watch, learns what you love, and finds what to watch next.</p>
+
+<p align="center">
+  <a href="https://github.com/3h4x/film-pick/actions/workflows/test.yml">
+    <img src="https://github.com/3h4x/film-pick/actions/workflows/test.yml/badge.svg" alt="CI status" />
+  </a>
+</p>
 
 ## Why
 
@@ -10,7 +17,7 @@ Streaming platforms recommend what they want you to watch. This recommends what 
 
 ### Smart Recommendations
 
-Seven recommendation engines, all powered by your personal ratings:
+Recommendation engines powered by your personal ratings, including:
 
 - **By Director** — loved 3 Villeneuve films? Here's every other movie he directed
 - **By Actor** — tracks which actors keep showing up in your highest-rated movies
@@ -57,7 +64,9 @@ For containerized local development, use:
 pnpm dev:docker   # Docker Compose dev server on http://localhost:4000
 ```
 
-A TMDb API key is required for search and recommendations. Two options:
+A TMDb API key is required for search and recommendations. The optional **For You** AI recommendation engine also needs `ANTHROPIC_API_KEY`; when enabled, FilmPick sends a compact taste profile plus TMDb candidate titles to Anthropic to rank personal recommendations.
+
+Two options for secrets:
 
 **Option A: Config UI** — paste your key in the Config tab. Stored in plaintext in the local SQLite database. Quick to set up, but less secure.
 
@@ -65,11 +74,12 @@ A TMDb API key is required for search and recommendations. Two options:
 
 ```bash
 bioenv set TMDB_API_KEY <your-tmdb-read-access-token>
+bioenv set ANTHROPIC_API_KEY <your-anthropic-api-key>  # Optional: enables For You AI recommendations
 eval "$(bioenv load)"    # Touch ID prompt, then start dev server
 pnpm dev
 ```
 
-Environment variable takes priority over the database setting.
+Environment variables take priority over database settings. `ANTHROPIC_API_KEY` is only read from the environment.
 
 ## Docker
 
@@ -142,6 +152,12 @@ The Dockerfile uses a multi-stage build: Node 24 Alpine for building, minimal Al
 ## Tech Stack
 
 Next.js 16 | React 19 | TypeScript | SQLite | Tailwind CSS 4 | TMDb API
+
+## CI
+
+GitHub Actions workflow [`test.yml`](.github/workflows/test.yml) runs `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm type-check`, and `pnpm test` on every push and pull request. On `master`, the semantic-release and Docker publish jobs are gated behind that verification job, so a red CI run blocks the `:latest` image from updating.
+
+For repository settings, protect `master` by requiring the `Verify` job from the `CI` workflow before merge.
 
 ## License
 

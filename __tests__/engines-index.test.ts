@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("@/lib/db", async (importOriginal) => {
@@ -418,8 +419,9 @@ describe("buildContext", () => {
 // ---------------------------------------------------------------------------
 
 function makeCdaMovie(overrides: Partial<RecommendedMovie> & { tmdb_id: number; title: string }): RecommendedMovie {
+  const { trace, ...rest } = overrides;
   return {
-    id: overrides.tmdb_id,
+    id: rest.tmdb_id,
     engine: "cda",
     reason: "cda",
     year: 2020,
@@ -429,8 +431,11 @@ function makeCdaMovie(overrides: Partial<RecommendedMovie> & { tmdb_id: number; 
     pl_title: null,
     cda_url: "https://cda.pl/video/default",
     description: null,
+    cda_last_status: null,
+    cda_last_checked_at: null,
     created_at: "2026-01-01",
-    ...overrides,
+    ...rest,
+    trace: trace ?? null,
   };
 }
 

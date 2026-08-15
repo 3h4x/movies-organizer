@@ -13,6 +13,8 @@ const VIDEO_EXTENSIONS = new Set([
   ".webm",
 ]);
 
+const IGNORED_DIRECTORY_NAMES = new Set(["Home Movies", "iphotos"]);
+
 export interface ScannedFile {
   filePath: string;
   filename: string;
@@ -38,7 +40,7 @@ export function* scanDirectoryGenerator(
         entry.name.includes("#snapshot")
       )
         continue;
-      if (["Home Movies", "iphotos"].includes(entry.name)) continue;
+      if (IGNORED_DIRECTORY_NAMES.has(entry.name)) continue;
       const fullPath = path.join(dir, entry.name);
       if (fullPath.includes("#snapshot")) continue;
       if (entry.isDirectory()) {

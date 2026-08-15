@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import path from "path";
@@ -35,7 +36,7 @@ describe("POST /api/tv/refresh", () => {
   beforeEach(() => {
     db = new Database(TEST_DB);
     initDb(db);
-    vi.mocked(getDb).mockReturnValue(db as unknown as ReturnType<typeof getDb>);
+    vi.mocked(getDb).mockReturnValue(db);
   });
 
   afterEach(() => {

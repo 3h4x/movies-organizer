@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 import { gunzipSync } from "zlib";
 import type Database from "better-sqlite3";
 import { getSetting, setSetting } from "@/lib/db";
@@ -58,8 +59,14 @@ function parseXmltvDate(s: string): Date {
   return new Date(Date.UTC(+y, +mo - 1, +d, +h, +min, +sec) - offset * 60000);
 }
 
+const attrRegexCache = new Map<string, RegExp>();
 function getAttr(s: string, attr: string): string {
-  const m = new RegExp(`\\b${attr}="([^"]*)"`, "i").exec(s);
+  let re = attrRegexCache.get(attr);
+  if (!re) {
+    re = new RegExp(`\\b${attr}="([^"]*)"`, "i");
+    attrRegexCache.set(attr, re);
+  }
+  const m = re.exec(s);
   return m ? m[1] : "";
 }
 
@@ -73,16 +80,25 @@ function decodeEntities(s: string): string {
     .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)));
 }
 
+const SPLIT_RE = /(?=<channel\b|<programme\b)/;
+const DISPLAY_NAME_RE = /<display-name[^>]*>([^<]+)/;
+const CHANNEL_ICON_RE = /<icon[^>]*\bsrc="([^"]+)"/;
+const TITLE_RE = /<title[^>]*>([^<]+)/;
+const DESC_RE = /<desc[^>]*>([^<]+)/;
+const CATEGORY_RE = /<category[^>]*>([^<]+)/;
+const PROGRAMME_ICON_RE = /<icon[^>]*\bsrc="([^"]+)"/;
+const STAR_RATING_RE = /<star-rating[^>]*>[\s\S]*?<value>([^<]+)<\/value>/;
+
 function parseXmltv(xml: string, todayStart: Date, todayEnd: Date) {
   const channels: EpgChannel[] = [];
   const programs: EpgProgram[] = [];
 
-  for (const part of xml.split(/(?=<channel\b|<programme\b)/)) {
+  for (const part of xml.split(SPLIT_RE)) {
     if (part.startsWith("<channel")) {
       const id = getAttr(part, "id");
       if (!id) continue;
-      const nameMatch = /<display-name[^>]*>([^<]+)/.exec(part);
-      const iconMatch = /<icon[^>]*\bsrc="([^"]+)"/.exec(part);
+      const nameMatch = DISPLAY_NAME_RE.exec(part);
+      const iconMatch = CHANNEL_ICON_RE.exec(part);
       channels.push({
         id,
         name: nameMatch ? decodeEntities(nameMatch[1].trim()) : id,
@@ -100,11 +116,11 @@ function parseXmltv(xml: string, todayStart: Date, todayEnd: Date) {
       const stop = parseXmltvDate(stopStr);
       if (stop < todayStart || start > todayEnd) continue;
       const inner = part.slice(openTagEnd);
-      const titleMatch = /<title[^>]*>([^<]+)/.exec(inner);
-      const descMatch = /<desc[^>]*>([^<]+)/.exec(inner);
-      const catMatch = /<category[^>]*>([^<]+)/.exec(inner);
-      const iconMatch = /<icon[^>]*\bsrc="([^"]+)"/.exec(inner);
-      const starMatch = /<star-rating[^>]*>[\s\S]*?<value>([^<]+)<\/value>/.exec(inner);
+      const titleMatch = TITLE_RE.exec(inner);
+      const descMatch = DESC_RE.exec(inner);
+      const catMatch = CATEGORY_RE.exec(inner);
+      const iconMatch = PROGRAMME_ICON_RE.exec(inner);
+      const starMatch = STAR_RATING_RE.exec(inner);
       programs.push({
         channel,
         title: titleMatch ? decodeEntities(titleMatch[1].trim()) : "Unknown",

@@ -1,4 +1,10 @@
+// tamtam inspected 2026-05-21
 import type { TmdbSearchResult } from "@/lib/tmdb";
+export type {
+  RecommendationSourceKind,
+  RecommendationSeedKind,
+  RecommendationTrace,
+} from "@/lib/recommendation-trace";
 
 export type SortOption =
   | "user_rating"
@@ -20,6 +26,7 @@ export interface Movie {
   user_rating: number | null;
   poster_url: string | null;
   source: string | null;
+  imdb_id?: string | null;
   type: string;
   tmdb_id?: number | null;
   rated_at: string | null;
@@ -27,15 +34,22 @@ export interface Movie {
   filmweb_url?: string | null;
   cda_url?: string | null;
   pl_title?: string | null;
+  description?: string | null;
   wishlist?: number;
   file_path?: string | null;
+  tmdb_collection_id?: number | null;
+  tmdb_collection_name?: string | null;
+  tmdb_collection_checked?: number | null;
+  tmdb_refreshed_at?: number | null;
 }
 
 export type RecType =
+  | "ai"
   | "genre"
   | "director"
   | "actor"
   | "movie"
+  | "franchise"
   | "hidden_gem"
   | "star_studded"
   | "random"
@@ -81,11 +95,13 @@ export const PAGE_SIZE = 36;
 
 export const REC_CATEGORIES: { value: string; label: string }[] = [
   { value: "all", label: "All" },
+  { value: "ai", label: "For You" },
   { value: "random", label: "Surprise Me" },
   { value: "genre", label: "By Genre" },
   { value: "actor", label: "By Actor" },
   { value: "director", label: "By Director" },
   { value: "movie", label: "Similar" },
+  { value: "franchise", label: "Franchises" },
   { value: "hidden_gem", label: "Hidden Gems" },
   { value: "star_studded", label: "Star-Studded" },
   { value: "watchlist", label: "From Watchlist" },

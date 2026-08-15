@@ -1,5 +1,11 @@
 import { NextRequest } from "next/server";
 import { getDb, getSetting, setSetting } from "@/lib/db";
+import { rateLimit } from "@/lib/rate-limit";
+import { rescheduleCdaJob } from "@/lib/cda-scheduler";
+import { invalidateMemCache } from "@/lib/epg-fetch";
+import { rescheduleEpgJob } from "@/lib/epg-scheduler";
+
+const VALID_REFRESH_INTERVAL_HOURS = [0, 6, 12, 24];
 
 export async function GET() {
   const db = getDb();
@@ -27,6 +33,11 @@ export async function GET() {
       | "idle"
       | "running"
       | "error",
+    cda_dead_link_count: (() => {
+      const v = getSetting(db, "cda_dead_link_count");
+      return v ? parseInt(v, 10) : null;
+    })(),
+    cda_health_last_run: getSetting(db, "cda_health_last_run"),
     epg_url: getSetting(db, "epg_url") ?? "",
     epg_enabled: getSetting(db, "epg_enabled") !== "false",
     epg_refresh_interval_hours: (() => {
@@ -40,6 +51,8 @@ export async function GET() {
 }
 
 export async function PATCH(request: NextRequest) {
+  const limited = rateLimit(request, "mutation");
+  if (limited) return limited;
   const db = getDb();
   const body = await request.json();
   try {
@@ -64,14 +77,13 @@ export async function PATCH(request: NextRequest) {
   }
   if (body.cda_refresh_interval_hours !== undefined) {
     const val = Number(body.cda_refresh_interval_hours);
-    if (![0, 6, 12, 24].includes(val)) {
+    if (!VALID_REFRESH_INTERVAL_HOURS.includes(val)) {
       return Response.json(
         { error: "cda_refresh_interval_hours must be 0, 6, 12, or 24" },
         { status: 400 },
       );
     }
     setSetting(db, "cda_refresh_interval_hours", String(val));
-    const { rescheduleCdaJob } = await import("@/lib/cda-scheduler");
     rescheduleCdaJob(db);
   }
   if (typeof body.tmdb_api_key === "string") {
@@ -87,7 +99,6 @@ export async function PATCH(request: NextRequest) {
     } else {
       db.prepare("DELETE FROM settings WHERE key = ?").run("epg_url");
     }
-    const { invalidateMemCache } = await import("@/lib/epg-fetch");
     invalidateMemCache();
   }
   if (typeof body.epg_enabled === "boolean") {
@@ -98,14 +109,13 @@ export async function PATCH(request: NextRequest) {
   }
   if (body.epg_refresh_interval_hours !== undefined) {
     const val = Number(body.epg_refresh_interval_hours);
-    if (![0, 6, 12, 24].includes(val)) {
+    if (!VALID_REFRESH_INTERVAL_HOURS.includes(val)) {
       return Response.json(
         { error: "epg_refresh_interval_hours must be 0, 6, 12, or 24" },
         { status: 400 },
       );
     }
     setSetting(db, "epg_refresh_interval_hours", String(val));
-    const { rescheduleEpgJob } = await import("@/lib/epg-scheduler");
     rescheduleEpgJob(db);
   }
   return Response.json({ ok: true });

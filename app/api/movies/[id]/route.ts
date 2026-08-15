@@ -1,12 +1,15 @@
 import { NextRequest } from "next/server";
 import { getDb, deleteMovie, type Movie } from "@/lib/db";
 import { getTmdbMovieDetails, searchTmdb, getMovieLocalized } from "@/lib/tmdb";
+import { rateLimit } from "@/lib/rate-limit";
 import { cleanTitle } from "@/lib/utils";
 import { execFile } from "child_process";
 import { promisify } from "util";
 import fs from "fs";
 
 const execFileAsync = promisify(execFile);
+
+const TITLE_NORMALIZE_RE = /[:;!?()[\]{}]/g;
 
 interface FfprobeStream {
   codec_type: string;
@@ -40,9 +43,11 @@ interface VideoMetadata {
 }
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const limited = rateLimit(request, "tmdb");
+  if (limited) return limited;
   const { id } = await params;
   const db = getDb();
   const movie = db
@@ -77,17 +82,25 @@ export async function GET(
           "-show_format",
           "-show_streams",
           filePath,
-        ]);
+        ], { timeout: 30000 });
         const ffprobeData = JSON.parse(stdout) as {
           streams: FfprobeStream[];
           format?: { format_long_name?: string; size?: string; duration?: string; bit_rate?: string };
         };
-        const videoStream = ffprobeData.streams.find(
-          (s) => s.codec_type === "video",
-        );
-        const audioStreams = ffprobeData.streams.filter(
-          (s) => s.codec_type === "audio",
-        );
+        let videoStream: FfprobeStream | undefined;
+        const audio: VideoMetadata["audio"] = [];
+        for (const s of ffprobeData.streams) {
+          if (s.codec_type === "video") {
+            if (!videoStream) videoStream = s;
+          } else if (s.codec_type === "audio") {
+            audio.push({
+              codec: s.codec_name,
+              channels: s.channels,
+              language: s.tags?.language,
+              title: s.tags?.title,
+            });
+          }
+        }
 
         return {
           format: ffprobeData.format?.format_long_name ?? "",
@@ -105,12 +118,7 @@ export async function GET(
                 bitrate: parseInt(videoStream.bit_rate || "0"),
               }
             : null,
-          audio: audioStreams.map((s) => ({
-            codec: s.codec_name,
-            channels: s.channels,
-            language: s.tags?.language,
-            title: s.tags?.title,
-          })),
+          audio,
         };
       };
 
@@ -155,14 +163,14 @@ export async function GET(
         // Find best match: exact title match (ignoring case/punctuation) or first result
         const normalizedTitle = cleanedTitle
           .toLowerCase()
-          .replace(/[:;!?()[\]{}]/g, "")
+          .replace(TITLE_NORMALIZE_RE, "")
           .trim();
         const bestMatch =
           results.find(
             (r) =>
               r.title
                 .toLowerCase()
-                .replace(/[:;!?()[\]{}]/g, "")
+                .replace(TITLE_NORMALIZE_RE, "")
                 .trim() === normalizedTitle,
           ) || results[0];
 
@@ -309,21 +317,47 @@ export async function GET(
   const unresolvedPseudoId = needsAutoLink && movie.cda_url && !movie.genre;
 
   // Enrich with credits from TMDb (always overwrite — TMDb is authoritative)
-  if (movie.tmdb_id && !unresolvedPseudoId && (!movie.director || !movie.writer || !movie.actors)) {
+  if (
+    movie.tmdb_id &&
+    !unresolvedPseudoId &&
+    (
+      !movie.director ||
+      !movie.writer ||
+      !movie.actors ||
+      !movie.tmdb_collection_checked
+    )
+  ) {
     try {
       const credits = await getTmdbMovieDetails(movie.tmdb_id);
+      const sets: string[] = [];
+      const vals: (string | number | null)[] = [];
       if (credits.director || credits.writer || credits.actors) {
-        db.prepare(
-          "UPDATE movies SET director = ?, writer = ?, actors = ? WHERE id = ?",
-        ).run(
-          credits.director,
-          credits.writer,
-          credits.actors,
-          rowId,
-        );
+        sets.push("director = ?", "writer = ?", "actors = ?");
+        vals.push(credits.director, credits.writer, credits.actors);
         movie.director = credits.director;
         movie.writer = credits.writer;
         movie.actors = credits.actors;
+      }
+      if (credits.tmdb_collection_id && !movie.tmdb_collection_id) {
+        sets.push("tmdb_collection_id = ?");
+        vals.push(credits.tmdb_collection_id);
+        movie.tmdb_collection_id = credits.tmdb_collection_id;
+      }
+      if (credits.tmdb_collection_name && !movie.tmdb_collection_name) {
+        sets.push("tmdb_collection_name = ?");
+        vals.push(credits.tmdb_collection_name);
+        movie.tmdb_collection_name = credits.tmdb_collection_name;
+      }
+      if (credits.tmdb_collection_checked && !movie.tmdb_collection_checked) {
+        sets.push("tmdb_collection_checked = ?");
+        vals.push(1);
+        movie.tmdb_collection_checked = 1;
+      }
+      if (sets.length > 0) {
+        vals.push(rowId);
+        db.prepare(
+          `UPDATE movies SET ${sets.join(", ")} WHERE id = ?`,
+        ).run(...vals);
       }
     } catch (error) {
       console.error("[Credits] Error fetching TMDb credits:", error);
@@ -367,9 +401,11 @@ export async function GET(
 }
 
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const limited = rateLimit(request, "mutation");
+  if (limited) return limited;
   const { id } = await params;
   const db = getDb();
   deleteMovie(db, parseInt(id, 10));
@@ -380,6 +416,8 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  const limited = rateLimit(request, "mutation");
+  if (limited) return limited;
   const { id } = await params;
   const db = getDb();
   const body = await request.json();

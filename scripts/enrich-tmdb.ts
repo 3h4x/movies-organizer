@@ -38,6 +38,7 @@ async function searchTmdb(apiKey: string, title: string, year: number | null) {
     if (y) url += `&year=${y}`;
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) return null;
     return await res.json();

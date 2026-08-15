@@ -1,9 +1,11 @@
 "use client";
+// tamtam inspected 2026-05-21
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import type { Movie, RecommendationGroup, AppTab } from "@/lib/types";
+import type { Movie, RecommendationGroup, AppTab, RecType } from "@/lib/types";
 import { REC_CATEGORIES } from "@/lib/types";
 import type { MoodKey } from "@/lib/mood-presets";
 import type { TmdbSearchResult } from "@/lib/tmdb";
+import { createLatestOnlyRunner } from "@/lib/latest-only-runner";
 import {
   getCanonicalMovieForTmdbId,
   upsertCanonicalTmdbMovie,
@@ -21,6 +23,24 @@ interface UseRecommendationsParams {
   addToast: (message: string, variant?: "default" | "success") => void;
   setMovies: React.Dispatch<React.SetStateAction<Movie[]>>;
   setSelectedMovie: (movie: Movie | null) => void;
+}
+
+type RecommendationEventType = "open" | "add";
+
+function postRecommendationEvent(
+  tmdbId: number,
+  event: RecommendationEventType,
+  engine?: RecType,
+) {
+  void fetch("/api/recommendations/event", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      tmdb_id: tmdbId,
+      event,
+      ...(engine ? { engine } : {}),
+    }),
+  });
 }
 
 export function useRecommendations({
@@ -51,29 +71,51 @@ export function useRecommendations({
   );
 
   const initialLoadSaved = useRef(false);
+  const moodRunnerRef = useRef(createLatestOnlyRunner<RecommendationGroup[]>());
 
   useEffect(() => {
     if (!activeMood) {
+      moodRunnerRef.current.invalidate();
       setMoodGroups([]);
+      setMoodLoading(false);
       setMoodError(null);
       return;
     }
-    setMoodLoading(true);
-    setMoodError(null);
-    (async () => {
-      try {
-        const r = await fetch(`/api/recommendations/mood?key=${activeMood}`);
-        if (!r.ok) throw new Error(`Request failed (${r.status})`);
-        const data = (await r.json()) as RecommendationGroup[];
-        setMoodGroups(data);
-        setMoodLoading(false);
-      } catch (err: unknown) {
-        setMoodError(
-          err instanceof Error ? err.message : "Failed to load mood picks",
-        );
-        setMoodLoading(false);
-      }
-    })();
+
+    const controller = new AbortController();
+    let requestErrorMessage = "Failed to load mood picks";
+    void moodRunnerRef.current.run(
+      async () => {
+        try {
+          const response = await fetch(`/api/recommendations/mood?key=${activeMood}`, {
+            signal: controller.signal,
+          });
+          if (!response.ok) throw new Error(`Request failed (${response.status})`);
+          return (await response.json()) as RecommendationGroup[];
+        } catch (error) {
+          requestErrorMessage =
+            error instanceof Error ? error.message : "Failed to load mood picks";
+          throw error;
+        }
+      },
+      {
+        onStart: () => {
+          setMoodLoading(true);
+          setMoodError(null);
+        },
+        onSuccess: (data) => setMoodGroups(data),
+        onError: () => {
+          if (controller.signal.aborted) return;
+          setMoodError(requestErrorMessage);
+        },
+        onSettled: () => setMoodLoading(false),
+      },
+    );
+
+    return () => {
+      controller.abort();
+      moodRunnerRef.current.invalidate();
+    };
   }, [activeMood]);
 
   const recommendations = useMemo(() => {
@@ -96,23 +138,18 @@ export function useRecommendations({
   const categoryCounts = useMemo(() => {
     const ratedTmdbIds = getRatedMovieTmdbIds(movies);
     const counts: Record<string, number> = {};
-    for (const [key, groups] of Object.entries(recGroups)) {
-      const count = groups.reduce(
-        (acc, g) =>
-          acc +
-          g.recommendations.filter((r) => !ratedTmdbIds.has(r.tmdb_id))
-            .length,
-        0,
-      );
-      if (count > 0) counts[key] = count;
-    }
     const allSeen = new Set<number>();
-    for (const groups of Object.values(recGroups)) {
+    for (const [key, groups] of Object.entries(recGroups)) {
+      let count = 0;
       for (const g of groups) {
         for (const r of g.recommendations) {
-          if (!ratedTmdbIds.has(r.tmdb_id)) allSeen.add(r.tmdb_id);
+          if (!ratedTmdbIds.has(r.tmdb_id)) {
+            count++;
+            allSeen.add(r.tmdb_id);
+          }
         }
       }
+      if (count > 0) counts[key] = count;
     }
     if (allSeen.size > 0) counts["all"] = allSeen.size;
     return counts;
@@ -240,6 +277,7 @@ export function useRecommendations({
     action: string,
     rec: TmdbSearchResult,
     fromMood = false,
+    engine?: RecType,
   ) {
     const existingMovie = getCanonicalMovieForTmdbId(movies, rec.tmdb_id);
 
@@ -326,21 +364,32 @@ export function useRecommendations({
         cda_url: rec.cda_url || null,
       };
 
-      fetch(existingMovie ? `/api/movies/${existingMovie.id}` : "/api/movies", {
-        method: existingMovie ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
+      const movieRequest = fetch(
+        existingMovie ? `/api/movies/${existingMovie.id}` : "/api/movies",
+        {
+          method: existingMovie ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        },
+      );
+
+      void movieRequest.then((response) => {
+        if (response.ok) {
+          postRecommendationEvent(tmdbId, "add", engine);
+        }
       });
     }
 
-    fetch("/api/recommendations/dismiss", {
+    void fetch("/api/recommendations/dismiss", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ tmdb_id: tmdbId }),
+      body: JSON.stringify({ tmdb_id: tmdbId, engine }),
     });
   }
 
-  async function handleRecClick(rec: TmdbSearchResult) {
+  async function handleRecClick(rec: TmdbSearchResult, engine?: RecType) {
+    postRecommendationEvent(rec.tmdb_id, "open", engine);
+
     const existing = getCanonicalMovieForTmdbId(movies, rec.tmdb_id);
     if (existing) {
       setSelectedMovie(existing);
@@ -362,6 +411,7 @@ export function useRecommendations({
       }),
     });
     if (!res.ok) return;
+    postRecommendationEvent(rec.tmdb_id, "add", engine);
     const { id } = await res.json();
     const movieRes = await fetch(`/api/movies/${id}`);
     const { movie } = await movieRes.json();

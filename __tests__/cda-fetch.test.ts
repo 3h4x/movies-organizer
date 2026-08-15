@@ -1,3 +1,4 @@
+// tamtam inspected 2026-05-21
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import path from "path";
@@ -141,6 +142,21 @@ describe("fetchAndStoreCdaMovies", () => {
     expect(rows).toHaveLength(0);
   });
 
+  it("returns early without rejecting when premium page fetch times out", async () => {
+    mockFetch.mockImplementation((url: string) => {
+      const urlStr = String(url);
+      if (urlStr.endsWith("/premium")) {
+        return Promise.reject(Object.assign(new Error("timeout"), { name: "TimeoutError" }));
+      }
+      return Promise.resolve({ ok: false, status: 403 });
+    });
+
+    await expect(fetchAndStore()).resolves.toBeUndefined();
+
+    const rows = db.prepare("SELECT * FROM recommended_movies WHERE engine = 'cda'").all();
+    expect(rows).toHaveLength(0);
+  });
+
   it("deletes existing cda records before inserting new ones", async () => {
     // Pre-seed a stale record
     db.prepare(
@@ -166,6 +182,47 @@ describe("fetchAndStoreCdaMovies", () => {
     // Stale record (9999) replaced by new one (12345)
     expect(rows).toHaveLength(1);
     expect(rows[0].tmdb_id).toBe(12345);
+  });
+
+  it("continues storing premium movies when a category page fetch times out", async () => {
+    mockFetch.mockImplementation((url: string) => {
+      const urlStr = String(url);
+      if (urlStr.endsWith("/premium")) {
+        return Promise.resolve({
+          ok: true,
+          text: async () =>
+            premiumHtml([
+              {
+                title: "New Film (2023)",
+                url: "https://www.cda.pl/video/44444/vfilm",
+                poster: "https://img.cda.pl/new.jpg",
+              },
+            ]),
+        });
+      }
+      if (urlStr.includes("/premium/akcji")) {
+        return Promise.reject(Object.assign(new Error("timeout"), { name: "TimeoutError" }));
+      }
+      if (urlStr.includes("/premium/")) {
+        return Promise.resolve({ ok: false, status: 403 });
+      }
+      if (urlStr.includes("themoviedb.org")) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => tmdbResult({ id: 12345, vote_average: 7.0 }),
+        });
+      }
+      return Promise.resolve({ ok: false, status: 404 });
+    });
+
+    await expect(fetchAndStore()).resolves.toBeUndefined();
+
+    const rows = db
+      .prepare("SELECT * FROM recommended_movies WHERE engine = 'cda'")
+      .all() as { tmdb_id: number; title: string }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0].tmdb_id).toBe(12345);
+    expect(rows[0].title).toBe("New Film");
   });
 
   it("stores a movie with tmdb enrichment when TMDb returns a match", async () => {

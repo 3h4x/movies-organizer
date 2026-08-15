@@ -1,3 +1,4 @@
+<!-- tamtam inspected 2026-05-21 -->
 # FilmPick
 
 Personal movie discovery engine with a Next.js web UI and SQLite database.
@@ -8,7 +9,7 @@ Personal movie discovery engine with a Next.js web UI and SQLite database.
 - **Database:** SQLite via `better-sqlite3`
 - **Data sources:** TMDb API, Filmweb (one-time import only — no scheduled sync)
 - **Testing:** Vitest
-- **Package manager:** pnpm (do not use npm)
+- **Package manager:** pnpm 11 (do not use npm)
 - **Secrets:** bioenv (Touch ID-protected Keychain)
 
 ## Commands
@@ -33,24 +34,26 @@ pnpm backup              # Backup SQLite DB
 │   │   ├── page.tsx                  — Standalone TMDb search entry page
 │   │   └── [query]/page.tsx          — TMDb search results page
 │   └── api/
-│       ├── movies/route.ts           — GET/POST library
+│       ├── movies/route.ts           — GET/POST library (GET supports `?type=` and `?q=` FTS search)
 │       ├── movies/[id]/route.ts      — GET/DELETE single movie
-│       ├── movies/[id]/full/route.ts — Full movie details with enrichment
+│       ├── movies/[id]/full/route.ts — DELETE movie from disk and DB (use ?disk_only=1 to keep DB row)
 │       ├── movies/[id]/play/route.ts — Launch local player
 │       ├── movies/[id]/stream/route.ts — Stream video file
 │       ├── movies/[id]/subtitles/route.ts — Subtitle management
 │       ├── movies/[id]/standardize/route.ts — Standardize file naming
+│       ├── movies/[id]/episodes/route.ts — TV episode watch progress (GET list / PUT mark watched / DELETE clear)
 │       ├── movies/merge/route.ts     — Merge duplicate entries
 │       ├── search/route.ts           — TMDb search
 │       ├── recommendations/route.ts  — Generate recommendations
 │       ├── recommendations/dismiss/route.ts — Dismiss recommendation
+│       ├── recommendations/event/route.ts — Record recommendation interaction events
 │       ├── recommendations/count/route.ts — Recommendation count
 │       ├── recommendations/mood/route.ts — Mood-based recommendations
 │       ├── person-ratings/route.ts   — Director/actor/writer ratings
 │       ├── pl-title/route.ts         — Polish title lookup
 │       ├── import/route.ts           — Import from filesystem directory
 │       ├── sync/route.ts             — Re-scan library path, add/remove
-│       ├── settings/route.ts         — GET/PUT app settings
+│       ├── settings/route.ts         — GET/PATCH app settings
 │       ├── backup/route.ts           — Trigger manual DB backup
 │       ├── cda-refresh/route.ts      — Refresh CDA availability cache
 │       └── tv/
@@ -97,6 +100,7 @@ pnpm backup              # Backup SQLite DB
 │   ├── search.ts                     — Shared search types (SearchMatches, TmdbSearchMovieState)
 │   ├── latest-only-runner.ts         — Utility: run async tasks, discard stale (latest-wins)
 │   ├── scanner.ts                    — Filesystem video scanner + filename parser
+│   ├── subtitles.ts                  — Subtitle format sniffing (SubRip/MicroDVD/MPL2/TMP/VTT/ASS), encoding detection, conversion to SubRip
 │   ├── hooks/                        — React hooks
 │   │   ├── useLibrary.ts             — Library fetch + filtering state
 │   │   ├── useRecommendations.ts     — Recommendations fetch + state
@@ -116,10 +120,12 @@ pnpm backup              # Backup SQLite DB
 │       └── cda.ts                    — CDA Premium available
 ├── scripts/
 │   ├── backup-db.sh                  — SQLite backup with tiered retention
+│   ├── restore-db.sh                 — Restore a SQLite backup to a target DB path
 │   ├── import-filmweb.ts             — Import Filmweb ratings export (JSON)
 │   ├── enrich-tmdb.ts                — Enrich existing movies with TMDb posters/genres
 │   ├── fix-credits.ts                — Re-fetch director/writer/actors from TMDb for all movies
 │   ├── fetch-cda.ts                  — Fetch CDA Premium movies into recommended_movies
+│   ├── dedupe-movies.ts              — Merge rows sharing a tmdb_id into a canonical row (uses lib/dedup.ts)
 │   └── ensure-native-abi.mjs         — Pre-test native ABI check (run by pnpm pretest)
 ├── __tests__/                        — Vitest tests
 └── data/
@@ -144,13 +150,15 @@ pnpm backup              # Backup SQLite DB
 - **Sync:** Re-scan saved library path, add new files, remove deleted ones
 - **Recommendations tab:** TMDb-based suggestions grouped by reason
 - **Search:** TMDb search to manually add movies
+- **Library search (FTS):** `GET /api/movies?q=` runs an SQLite FTS5 prefix search over title, pl_title, director, writer, and actors (backed by the `movies_fts` virtual table); the Library search box debounces and queries this endpoint
+- **TV episode progress:** TV/series detail view tracks watched episodes per season/episode via `app/api/movies/[id]/episodes` (`TvEpisodeProgressSection`); progress is stored in `tv_episode_progress` and removed on movie delete via `ON DELETE CASCADE`
 - **Wishlist:** Flag movies with `wishlist=1`; dedicated tab; watchlist recommendation engine picks from it
 - **TV guide (EPG):** Fetches and caches an M3U/EPG feed; configurable via settings; scheduled refresh; channel blacklist
 - **Mood recommendations:** Predefined mood presets map to TMDb genre/keyword queries
 - **CDA integration:** `cda.ts` resolves streaming URLs; `cda-scheduler.ts` refreshes availability cache on a schedule
-- **URL hash deep-link:** `#movie-<id>` in the URL opens the movie detail modal directly on page load
+- **URL hash deep-link:** `#movie/<tmdbId>` opens a TMDb-backed movie detail modal directly on page load; use `#movie/local/<dbId>` for local-only entries
 - **hasFileOnly filter:** Library can be filtered to show only movies with a local file path (`hasFileOnly=1`)
-- **Lazy enrichment:** `GET /api/movies/[id]/full` lazily fetches and stores `pl_title` and `description` from TMDb on first access
+- **Lazy enrichment:** `GET /api/movies/[id]` lazily fetches and stores `pl_title` and `description` from TMDb on first access
 - **TMDb TTL cache:** `lib/tmdb.ts` keeps an in-memory TTL cache for `getMovieLocalized` and `getTmdbMovieDetails` to reduce redundant API calls
 - **Config tabs:** Current Config sections are `Library`, `Integrations`, `Recommendations`, and `TV`
 
@@ -158,7 +166,9 @@ pnpm backup              # Backup SQLite DB
 
 **movies**: id, title, year, genre, director, writer, actors, rating, user_rating, poster_url, source, imdb_id, tmdb_id, type (`movie`|`tv`), file_path, extra_files (JSON), video_metadata (JSON), filmweb_id, filmweb_url, cda_url, pl_title, description, rated_at, created_at, wishlist (0|1)
 
-**Other tables**: settings (key/value), dismissed_recommendations (tmdb_id), recommendation_cache (engine, data, movie_count, created_at — `created_at` drives the TTL checked by `getCachedEngine(db, engine, maxAgeHours)`), recommended_movies (tmdb_id, engine, reason, title, year, genre, rating, poster_url, pl_title, cda_url, description), _migrations (migration guard)
+**Other tables**: settings (key/value), dismissed_recommendations (tmdb_id), recommendation_events (tmdb_id, engine, event, created_at), recommendation_impressions (tmdb_id, engine, shown_count, last_shown_at — populated by `app/api/recommendations/route.ts` only for rotation-aware engines, currently `hidden_gem`; consumed via `getImpressionCounts` to demote titles surfaced repeatedly within a recent window), recommendation_cache (engine, data, movie_count, created_at — `created_at` drives the TTL checked by `getCachedEngine(db, engine, maxAgeHours)`), recommended_movies (tmdb_id, engine, reason, title, year, genre, rating, poster_url, pl_title, cda_url, description), tv_episode_progress (id, movie_id, season_number, episode_number, watched_at, created_at, updated_at — UNIQUE(movie_id, season_number, episode_number), FK to movies ON DELETE CASCADE), _migrations (migration guard)
+
+**movies_fts**: FTS5 virtual table (external content over `movies`, rowid = movies.id) indexing title, pl_title, director, writer, actors; kept in sync by AFTER INSERT/UPDATE/DELETE triggers on `movies` and queried by `getMovies(db, type, query)` for `?q=` search
 
 ### Environment
 
@@ -182,9 +192,16 @@ eval "$(bioenv load)" && pnpm dlx tsx scripts/enrich-tmdb.ts
 # Backup DB (also available as: pnpm backup)
 bash scripts/backup-db.sh
 
+# Restore backup to the app DB (validates integrity before replacing target; add --force to overwrite)
+bash scripts/restore-db.sh data/backups/<backup-file>.db data/movies.db --force
+
 # PM2 scheduled backup (every 15 min)
 pm2 start scripts/backup-db.sh --name movies-backup --cron-restart='*/15 * * * *' --no-autorestart
 ```
+
+### Disaster recovery
+
+Stop the app before restoring, then pick the newest backup with `ls -1t data/backups/*.db | head -1` and restore it with `bash scripts/restore-db.sh "$(ls -1t data/backups/*.db | head -1)" data/movies.db --force`. The restore script copies the backup to a temporary file, runs SQLite `integrity_check`, and only then replaces the target database. Start the app again and run `pnpm test -- __tests__/backup-restore.test.ts` when validating the restore path locally.
 
 ### Logs
 
@@ -192,7 +209,7 @@ Next.js dev server logs to stdout. When running in the background:
 
 ```bash
 # Start dev server with logs to file
-nohup npx next dev --port 4000 > /tmp/movies-dev.log 2>&1 &
+nohup pnpm dev > /tmp/movies-dev.log 2>&1 &
 
 # Tail logs
 tail -f /tmp/movies-dev.log
@@ -205,7 +222,7 @@ Each request is logged as `GET /path STATUS in Xms`. API errors show as 500 with
 
 Common errors:
 
-- **`better-sqlite3` native addon not found** — run `npx node-gyp rebuild` inside the `better-sqlite3` package dir (happens after `pnpm install` skips build scripts)
+- **`better-sqlite3` native addon not found** — run `pnpm rebuild better-sqlite3` from the repo root after confirming `pnpm-workspace.yaml` still allows its build script
 - **SWC binary missing** — install `@next/swc-linux-arm64-gnu` (or musl) for ARM64 Linux environments
 
 ## Docker
@@ -245,7 +262,7 @@ TMDB_API_KEY=<your_key> docker run -p 4000:4000 -v $(pwd)/data:/app/data -e TMDB
 
 ## Development
 
-- Use `pnpm` exclusively (not npm)
+- Use `pnpm` 11 exclusively (not npm)
 - Conventional commits are enforced (see Scope & Safety Rules §1)
 - Type check with `pnpm type-check` before committing
 - Target the versions already in the repo: Next.js 16, React 19, TypeScript 6, Tailwind CSS 4, Node 24 (see Dockerfile). Follow current framework patterns instead of introducing legacy APIs.
@@ -303,13 +320,14 @@ TMDB_API_KEY=<your_key> docker run -p 4000:4000 -v $(pwd)/data:/app/data -e TMDB
 12. **Preserve the current standalone deployment contract** when touching build/runtime config: `next.config.ts` must keep `output: "standalone"` and `serverExternalPackages: ["better-sqlite3"]` unless every Docker/deployment path is re-verified.
 13. **Direct `new Database(...)` calls are an exception reserved for isolated backup/test code.** Production reads/writes should continue to go through `getDb()`; the current allowed non-singleton cases are `lib/backup.ts` (readonly backup handle) and Vitest DB setup/fixtures.
 14. **Standalone maintenance/import scripts under `scripts/` may also open their own `new Database(dbPath)` handle** because they run as one-off Node processes outside the app singleton lifecycle. Keep that exception scoped to `scripts/`; do not copy it into `app/`, `components/`, or long-lived `lib/` runtime code.
-15. **App startup side effects belong in `instrumentation.ts`.** Background jobs such as backups and scheduler initialization should start from `register()` behind the existing `NEXT_RUNTIME === "nodejs"` guard, not from route handlers, components, or ad-hoc module top-level code.
+15. **Never infer a subtitle's format from its extension.** Files named `.srt` routinely hold MicroDVD or MPL2, and mislabelling them makes players render nothing. Route `lib/subtitles.ts` (`normalizeSubtitle` on upload, `subtitleExtensionForContent` on rename) over the bytes instead; frame-based formats need the movie's fps from ffprobe.
+16. **App startup side effects belong in `instrumentation.ts`.** Background jobs such as backups and scheduler initialization should start from `register()` behind the existing `NEXT_RUNTIME === "nodejs"` guard, not from route handlers, components, or ad-hoc module top-level code.
 
 ## Dependency & Supply-Chain Security
 
 1. **Always commit `pnpm-lock.yaml`.** Never install without a lock file.
 2. **Run `pnpm audit` after any dependency change** and resolve high/critical findings before committing.
-3. **Only `better-sqlite3`, `esbuild`, and `sharp` are allowed to run install scripts** (`pnpm.onlyBuiltDependencies` in `package.json`). Do not add packages with `postinstall`/`prepare` scripts without explicit user approval.
+3. **Only `better-sqlite3`, `esbuild`, and `sharp` are allowed to run install scripts** (`allowBuilds` in `pnpm-workspace.yaml`). Do not add packages with `postinstall`/`prepare` scripts without explicit user approval.
 4. **Never add a new dependency without explicit user approval.** Justify every new dep in the commit message.
 5. **Verify new packages before adding:** check npm download counts, publish date, and maintainer history to guard against typosquatting. Flag anything suspicious before installing.
 6. **Inspect lifecycle scripts before approving a dependency update.** `prepare`, `postinstall`, and `install` scripts are code execution and must be treated as a security review point.
@@ -325,3 +343,4 @@ TMDB_API_KEY=<your_key> docker run -p 4000:4000 -v $(pwd)/data:/app/data -e TMDB
 7. **Do not bypass Husky/commitlint/lint-staged hooks** with `--no-verify` or similar flags unless the user explicitly instructs it for a one-off emergency.
 8. **Do not change ports, image names, deployment wiring, or container volume paths without verifying all downstream references** (`README.md`, `docker-compose.yml`, Playwright base URL, and docs).
 9. **Never place real TMDb credentials in committed fixtures, screenshots, docs, or seeded SQLite data.** Use `bioenv` for local runs and obvious placeholders in any artifact that can land in git.
+10. **Mutating and TMDb-hitting API routes are rate-limited.** `lib/rate-limit.ts` ships an in-memory per-IP token bucket; new write routes must call `rateLimit(request, "mutation")` (default 10 rpm/IP) and new TMDb-hitting routes must call `rateLimit(request, "tmdb")` (default 30 rpm/IP) at the top of the handler. `X-Forwarded-For` is only trusted when `TRUSTED_PROXY=1` in the environment. Limits are bypassed under Vitest unless `RATE_LIMIT_ENFORCE_IN_TESTS=1`.

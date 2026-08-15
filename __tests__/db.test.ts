@@ -50,6 +50,9 @@ describe("database", () => {
     expect(columns).toContain("source");
     expect(columns).toContain("imdb_id");
     expect(columns).toContain("tmdb_id");
+    expect(columns).toContain("tmdb_collection_id");
+    expect(columns).toContain("tmdb_collection_name");
+    expect(columns).toContain("tmdb_collection_checked");
     expect(columns).toContain("type");
   });
 
@@ -131,6 +134,36 @@ describe("recommendation cache", () => {
     setCachedEngine(db, "genre", data, 5);
     const result = getCachedEngine(db, "genre", 5);
     expect(result).toEqual(data);
+  });
+
+  it("preserves recommendation trace in cached engine JSON", () => {
+    const data = [{
+      reason: "Because you loved Inception",
+      type: "movie",
+      recommendations: [{
+        tmdb_id: 329865,
+        title: "Arrival",
+        year: 2016,
+        genre: "Sci-Fi",
+        rating: 7.9,
+        poster_url: null,
+        imdb_id: null,
+        trace: {
+          engine: "movie",
+          source: "live_tmdb",
+          seedKind: "movie",
+          seedTmdbId: 27205,
+          seedTitle: "Inception",
+        },
+      }],
+    }];
+    setCachedEngine(db, "movie", data, 5);
+    const result = getCachedEngine<typeof data[number]>(db, "movie", 5);
+    expect(result?.[0].recommendations[0].trace).toMatchObject({
+      engine: "movie",
+      source: "live_tmdb",
+      seedTmdbId: 27205,
+    });
   });
 
   it("returns null when movie count differs from cached count", () => {
@@ -420,6 +453,25 @@ describe("recommended movies", () => {
     expect(movies[0].engine).toBe("genre");
     expect(movies[0].reason).toBe("Because you love Sci-Fi");
     expect(movies[0].tmdb_id).toBe(329865);
+  });
+
+  it("saves and retrieves recommendation trace from recommended_movies", () => {
+    saveRecommendedMovies(db, "genre", "Because you love Sci-Fi", [{
+      ...sampleMovie,
+      trace: {
+        engine: "genre",
+        source: "live_tmdb",
+        seedKind: "genre",
+        seedId: 878,
+        seedName: "Sci-Fi",
+      },
+    }]);
+    const movies = getRecommendedMovies(db, "genre");
+    expect(movies[0].trace).toMatchObject({
+      engine: "genre",
+      source: "live_tmdb",
+      seedName: "Sci-Fi",
+    });
   });
 
   it("retrieves recommended movies filtered by engine", () => {
@@ -797,6 +849,25 @@ describe("getMovies sort order", () => {
     const series = getMovies(db, "series");
     expect(series.every((m) => m.type === "series")).toBe(true);
   });
+
+  it("returns no rows for nonblank FTS searches with no searchable tokens", () => {
+    insert("Movie A", 1, 8);
+    insertMovie(db, {
+      title: "Series B",
+      year: 2001,
+      genre: "Drama",
+      director: null,
+      rating: 7.0,
+      poster_url: null,
+      source: "tmdb",
+      imdb_id: null,
+      tmdb_id: 999,
+      type: "series",
+    });
+
+    expect(getMovies(db, undefined, "!!!")).toEqual([]);
+    expect(getMovies(db, "series", "!!!")).toEqual([]);
+  });
 });
 
 // The original movies schema (before any migrations were added).
@@ -849,6 +920,7 @@ describe("database migrations on existing schema", () => {
     expect(cols).toContain("cda_url");
     expect(cols).toContain("filmweb_id");
     expect(cols).toContain("filmweb_url");
+    expect(cols).toContain("tmdb_refreshed_at");
   });
 
   it("records all migrations in _migrations table", () => {
@@ -862,9 +934,13 @@ describe("database migrations on existing schema", () => {
     ).map((r) => r.name);
     expect(migrationNames).toContain("add_file_path");
     expect(migrationNames).toContain("add_video_metadata");
+    expect(migrationNames).toContain("add_tmdb_collection_columns");
+    expect(migrationNames).toContain("add_tmdb_collection_checked");
     expect(migrationNames).toContain("add_credits");
     expect(migrationNames).toContain("add_extra_files");
     expect(migrationNames).toContain("add_user_columns");
+    expect(migrationNames).toContain("add_tmdb_refreshed_at");
+    expect(migrationNames).toContain("add_movies_fts");
   });
 
   it("is idempotent — calling initDb twice does not throw or duplicate migrations", () => {
@@ -873,8 +949,8 @@ describe("database migrations on existing schema", () => {
     expect(() => initDb(db)).not.toThrow();
 
     const migrationRows = db.prepare("SELECT COUNT(*) as c FROM _migrations").get() as { c: number };
-    // Exactly 5 named migrations, no duplicates
-    expect(migrationRows.c).toBe(5);
+    // Exactly 9 named migrations, no duplicates
+    expect(migrationRows.c).toBe(9);
   });
 
   it("migrates old id-based recommendation_cache to engine-based schema", () => {
@@ -922,6 +998,33 @@ describe("database migrations on existing schema", () => {
 
     const cols = (db.pragma("table_info(recommended_movies)") as { name: string }[]).map((c) => c.name);
     expect(cols).toContain("description");
+  });
+
+  it("adds trace column to recommended_movies when missing", () => {
+    db = new Database(MIGRATION_DB);
+    db.exec(ORIGINAL_MOVIES_SCHEMA);
+    db.exec(`
+      CREATE TABLE recommended_movies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tmdb_id INTEGER NOT NULL,
+        engine TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        title TEXT NOT NULL,
+        year INTEGER,
+        genre TEXT,
+        rating REAL,
+        poster_url TEXT,
+        pl_title TEXT,
+        cda_url TEXT,
+        description TEXT,
+        UNIQUE(tmdb_id, engine)
+      );
+    `);
+
+    initDb(db);
+
+    const cols = (db.pragma("table_info(recommended_movies)") as { name: string }[]).map((c) => c.name);
+    expect(cols).toContain("trace");
   });
 
   it("preserves existing movie data through migrations", () => {

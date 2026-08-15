@@ -1,7 +1,9 @@
 "use client";
+// tamtam inspected 2026-05-21
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Button from "@/components/ui/Button";
 
 export default function SearchIndexPage() {
   const [query, setQuery] = useState("");
@@ -37,13 +39,13 @@ export default function SearchIndexPage() {
             autoFocus
             className="flex-1 bg-gray-800/60 text-white px-4 py-2.5 rounded-xl border border-gray-700/50 focus:border-indigo-500/50 focus:outline-none placeholder-gray-600 text-sm"
           />
-          <button
+          <Button
             onClick={submit}
             disabled={!query.trim()}
-            className="bg-indigo-500 text-white px-5 py-2.5 rounded-xl hover:bg-indigo-400 disabled:opacity-40 transition-all font-medium text-sm"
+            className="px-5 py-2.5 rounded-xl text-sm"
           >
             Search
-          </button>
+          </Button>
         </div>
       </div>
     </div>

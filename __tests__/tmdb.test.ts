@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Prevent tmdb.ts from opening the real production DB when resolving the API key
-// via getDbApiKey(). All tests in this file set process.env.TMDB_API_KEY so the
-// env-var path is always taken; the DB path is never needed.
+// via getDbApiKey(). Tests that resolve the API key set process.env.TMDB_API_KEY
+// so the env-var path is taken; the DB path is never needed.
 vi.mock("@/lib/db", () => ({
   getDb: vi.fn(() => { throw new Error("no db in tmdb tests"); }),
   getSetting: vi.fn(() => null),
@@ -10,25 +10,35 @@ vi.mock("@/lib/db", () => ({
 
 import {
   searchTmdb,
-  searchTmdbForUi,
   getTmdbRecommendations,
   getTmdbSimilar,
+  getTmdbHealth,
   genreNameToId,
   getMovieLocalized,
   getPolishTitle,
   getTmdbMovieDetails,
+  getTmdbCollectionParts,
   getMovieCredits,
   searchTmdbPl,
   clearTmdbCache,
+  clearTmdbHealthTracker,
+  searchTmdbForUi,
 } from "@/lib/tmdb";
 
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
+afterEach(() => {
+  clearTmdbCache();
+  clearTmdbHealthTracker();
+  vi.useRealTimers();
+});
+
 describe("tmdb client", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     clearTmdbCache();
+    clearTmdbHealthTracker();
     process.env.TMDB_API_KEY = "test-key";
   });
 
@@ -132,126 +142,117 @@ describe("tmdb client", () => {
     await expect(searchTmdb("inception")).rejects.toThrow("tmdb_api_error:401");
   });
 
-  it("falls back to person filmography when direct movie search is empty", async () => {
-    mockFetch
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ results: [] }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          results: [
-            { id: 1, name: "Mia Goth", popularity: 15, known_for_department: "Acting" },
-          ],
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          cast: [
-            {
-              id: 950387,
-              title: "Pearl",
-              release_date: "2022-09-16",
-              genre_ids: [27],
-              vote_average: 7.2,
-              poster_path: "/pearl.jpg",
-              popularity: 30,
-            },
-            {
-              id: 760104,
-              title: "X",
-              release_date: "2022-03-18",
-              genre_ids: [27],
-              vote_average: 6.8,
-              poster_path: "/x.jpg",
-              popularity: 25,
-            },
-          ],
-          crew: [],
-        }),
-      });
+  it("tracks successful live TMDb requests by helper", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        results: [
+          {
+            id: 27205,
+            title: "Inception",
+            release_date: "2010-07-16",
+            genre_ids: [28, 878],
+            vote_average: 8.365,
+            poster_path: "/ljsZTbVsrQSqZgWeep2B1QiDKuh.jpg",
+          },
+        ],
+      }),
+    });
 
-    const results = await searchTmdbForUi("mia goth");
-    expect(results).toHaveLength(2);
-    expect(results[0].title).toBe("Pearl");
-    expect(results[1].title).toBe("X");
-    expect(mockFetch).toHaveBeenNthCalledWith(
-      2,
-      expect.stringContaining("/search/person?query=mia%20goth"),
-      expect.any(Object),
-    );
-    expect(mockFetch).toHaveBeenNthCalledWith(
-      3,
-      expect.stringContaining("/person/1/movie_credits"),
-      expect.any(Object),
-    );
+    await searchTmdb("inception");
+
+    expect(getTmdbHealth()).toMatchObject({
+      liveRequestCount: 1,
+      cacheHitCount: 0,
+      retryCount: 0,
+      nonOkCount: 0,
+      helpers: {
+        searchTmdb: {
+          liveRequestCount: 1,
+          cacheHitCount: 0,
+          retryCount: 0,
+          nonOkCount: 0,
+        },
+      },
+    });
   });
 
-  it("deduplicates person fallback filmography results by tmdb_id", async () => {
+  it("tracks cache hits for localized lookups", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        title: "Incepcja",
+        overview: "Opis",
+      }),
+    });
+
+    const first = await getMovieLocalized(27205);
+    const second = await getMovieLocalized(27205);
+
+    expect(first).toEqual(second);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(getTmdbHealth()).toMatchObject({
+      liveRequestCount: 1,
+      cacheHitCount: 1,
+      helpers: {
+        getMovieLocalized: {
+          liveRequestCount: 1,
+          cacheHitCount: 1,
+          retryCount: 0,
+          nonOkCount: 0,
+        },
+      },
+    });
+  });
+
+  it("tracks 429 retries and last rate-limit timestamp", async () => {
+    vi.useFakeTimers();
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     mockFetch
       .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ results: [] }),
+        ok: false,
+        status: 429,
+        statusText: "Too Many Requests",
       })
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
           results: [
-            { id: 10, name: "Director One", popularity: 12, known_for_department: "Directing" },
-            { id: 11, name: "Actor Two", popularity: 11, known_for_department: "Acting" },
-          ],
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          cast: [],
-          crew: [
             {
-              id: 101,
-              title: "Shared Movie",
-              release_date: "2021-01-01",
-              genre_ids: [18],
-              vote_average: 7.3,
-              poster_path: "/shared-a.jpg",
-              popularity: 18,
+              id: 27205,
+              title: "Inception",
+              release_date: "2010-07-16",
+              genre_ids: [28, 878],
+              vote_average: 8.365,
+              poster_path: "/ljsZTbVsrQSqZgWeep2B1QiDKuh.jpg",
             },
           ],
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          cast: [
-            {
-              id: 101,
-              title: "Shared Movie",
-              release_date: "2021-01-01",
-              genre_ids: [18],
-              vote_average: 7.3,
-              poster_path: "/shared-b.jpg",
-              popularity: 22,
-            },
-            {
-              id: 102,
-              title: "Unique Movie",
-              release_date: "2020-01-01",
-              genre_ids: [35],
-              vote_average: 6.5,
-              poster_path: "/unique.jpg",
-              popularity: 10,
-            },
-          ],
-          crew: [],
         }),
       });
 
-    const results = await searchTmdbForUi("shared person");
-    expect(results).toHaveLength(2);
-    expect(results.map((result) => result.tmdb_id)).toEqual([101, 102]);
-    expect(results[0].poster_url).toContain("/shared-b.jpg");
+    const promise = searchTmdb("inception");
+    await vi.runAllTimersAsync();
+    await promise;
+
+    expect(getTmdbHealth()).toMatchObject({
+      liveRequestCount: 2,
+      retryCount: 1,
+      nonOkCount: 1,
+      lastErrorStatus: 429,
+      lastErrorMessage: "Too Many Requests",
+      helpers: {
+        searchTmdb: {
+          liveRequestCount: 2,
+          cacheHitCount: 0,
+          retryCount: 1,
+          nonOkCount: 1,
+        },
+      },
+    });
+    expect(getTmdbHealth().last429At).toBeTruthy();
+
+    warnSpy.mockRestore();
+    vi.useRealTimers();
   });
 
   it("fetches recommendations for a tmdb id", async () => {
@@ -803,13 +804,39 @@ describe("getTmdbMovieDetails", () => {
     expect(details.actors).toBe("Leonardo DiCaprio, Joseph Gordon-Levitt");
   });
 
+  it("reads collection metadata from movie details", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        belongs_to_collection: {
+          id: 10,
+          name: "Star Wars Collection",
+        },
+        credits: {
+          crew: [],
+          cast: [],
+        },
+      }),
+    });
+
+    const details = await getTmdbMovieDetails(11);
+    expect(details.tmdb_collection_id).toBe(10);
+    expect(details.tmdb_collection_name).toBe("Star Wars Collection");
+    expect(details.tmdb_collection_checked).toBe(true);
+  });
+
   it("returns nulls when credits are missing", async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({}),
     });
     const details = await getTmdbMovieDetails(1);
-    expect(details).toEqual({ director: null, writer: null, actors: null });
+    expect(details).toEqual({
+      director: null,
+      writer: null,
+      actors: null,
+      tmdb_collection_checked: true,
+    });
   });
 
   it("returns nulls on API error", async () => {
@@ -833,6 +860,54 @@ describe("getTmdbMovieDetails", () => {
     });
     const details = await getTmdbMovieDetails(1);
     expect(details.actors?.split(", ")).toHaveLength(5);
+  });
+});
+
+describe("getTmdbCollectionParts", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    clearTmdbCache();
+    process.env.TMDB_API_KEY = "test-key";
+  });
+
+  it("fetches collection parts as TMDb search results", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        parts: [
+          {
+            id: 11,
+            title: "Star Wars",
+            release_date: "1977-05-25",
+            genre_ids: [12, 878],
+            vote_average: 8.2,
+            poster_path: "/star-wars.jpg",
+          },
+        ],
+      }),
+    });
+
+    const parts = await getTmdbCollectionParts(10);
+    expect(parts).toEqual([
+      {
+        title: "Star Wars",
+        year: 1977,
+        genre: "Adventure, Sci-Fi",
+        rating: 8.2,
+        poster_url: "https://image.tmdb.org/t/p/w300/star-wars.jpg",
+        tmdb_id: 11,
+        imdb_id: null,
+      },
+    ]);
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining("/collection/10"),
+      expect.any(Object),
+    );
+  });
+
+  it("returns an empty list when the collection endpoint errors", async () => {
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
+    expect(await getTmdbCollectionParts(999)).toEqual([]);
   });
 });
 
@@ -1145,5 +1220,136 @@ describe("searchTmdbPl", () => {
     mockFetch.mockResolvedValue({ ok: true, json: async () => plResult({ overview: "" }) });
     const result = await searchTmdbPl("Film", null);
     expect(result!.description).toBeNull();
+  });
+});
+
+describe("searchTmdbForUi — person fallback", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    clearTmdbCache();
+    clearTmdbHealthTracker();
+    process.env.TMDB_API_KEY = "test-key";
+  });
+
+  it("falls back to person filmography when direct movie search is empty", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ results: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          results: [
+            { id: 1, name: "Mia Goth", popularity: 15, known_for_department: "Acting" },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          cast: [
+            {
+              id: 950387,
+              title: "Pearl",
+              release_date: "2022-09-16",
+              genre_ids: [27],
+              vote_average: 7.2,
+              poster_path: "/pearl.jpg",
+              popularity: 30,
+            },
+            {
+              id: 760104,
+              title: "X",
+              release_date: "2022-03-18",
+              genre_ids: [27],
+              vote_average: 6.8,
+              poster_path: "/x.jpg",
+              popularity: 25,
+            },
+          ],
+          crew: [],
+        }),
+      });
+
+    const results = await searchTmdbForUi("mia goth");
+    expect(results).toHaveLength(2);
+    expect(results[0].title).toBe("Pearl");
+    expect(results[1].title).toBe("X");
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("/search/person?query=mia%20goth"),
+      expect.any(Object),
+    );
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining("/person/1/movie_credits"),
+      expect.any(Object),
+    );
+  });
+
+  it("deduplicates person fallback filmography results by tmdb_id", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ results: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          results: [
+            { id: 10, name: "Director One", popularity: 12, known_for_department: "Directing" },
+            { id: 11, name: "Actor Two", popularity: 11, known_for_department: "Acting" },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          cast: [],
+          crew: [
+            {
+              id: 101,
+              title: "Shared Movie",
+              release_date: "2021-01-01",
+              genre_ids: [18],
+              vote_average: 7.3,
+              poster_path: "/shared-a.jpg",
+              popularity: 18,
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          cast: [
+            {
+              id: 101,
+              title: "Shared Movie",
+              release_date: "2021-01-01",
+              genre_ids: [18],
+              vote_average: 7.3,
+              poster_path: "/shared-b.jpg",
+              popularity: 22,
+            },
+            {
+              id: 102,
+              title: "Unique Movie",
+              release_date: "2020-01-01",
+              genre_ids: [35],
+              vote_average: 6.5,
+              poster_path: "/unique.jpg",
+              popularity: 10,
+            },
+          ],
+          crew: [],
+        }),
+      });
+
+    const results = await searchTmdbForUi("shared person");
+    expect(results).toHaveLength(2);
+    expect(results.map((result) => result.tmdb_id)).toEqual([101, 102]);
+    expect(results[0].poster_url).toContain("/shared-b.jpg");
   });
 });

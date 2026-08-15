@@ -1,6 +1,6 @@
 "use client";
+// tamtam inspected 2026-05-21
 import { useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
 import type { AppTab } from "@/lib/types";
 
 interface AppNavProps {
@@ -36,7 +36,6 @@ export default function AppNav({
   onImport,
   onSearchEnter,
 }: AppNavProps) {
-  const router = useRouter();
   const tabsRef = useRef<HTMLDivElement | null>(null);
 
   const tabs = [
@@ -92,12 +91,14 @@ export default function AppNav({
     <nav className="sticky top-0 z-40 -mx-4 sm:-mx-6 px-4 sm:px-6 pt-4 pb-0 bg-[#0a0e1a]/90 backdrop-blur-2xl border-b border-white/[0.05] shadow-[0_1px_0_0_rgba(255,255,255,0.03)]">
       <div className="max-w-7xl mx-auto">
         {/* Row 1: Logo + Actions */}
-        <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div
+          data-testid="app-header-row"
+          className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+        >
           <div className="flex items-center justify-between gap-3 sm:justify-start sm:gap-4">
             <h1 className="text-lg font-bold tracking-tight">
-              <button
-                type="button"
-                onClick={() => router.push("/")}
+              <a
+                href="#recommendations"
                 className="flex min-h-11 items-center gap-2 rounded-lg px-1.5 text-white transition-opacity hover:opacity-80 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/70"
                 aria-label="Go to FilmPick home"
               >
@@ -112,7 +113,7 @@ export default function AppNav({
                 <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-400/80 border border-indigo-500/20">
                   {process.env.NEXT_PUBLIC_APP_VERSION || "dev"}
                 </span>
-              </button>
+              </a>
             </h1>
           </div>
           {!initialLoad && (
@@ -166,7 +167,7 @@ export default function AppNav({
         </div>
 
         {!initialLoad && (
-          <div className="mb-3 sm:-mt-1">
+          <div data-testid="app-search-row" className="mb-3 sm:-mt-1">
             <div className="relative group transition-all sm:max-w-xs">
               <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
                 <svg
@@ -187,7 +188,16 @@ export default function AppNav({
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  // The search box is "Search library...", but it renders on every
+                  // tab. On tabs that aren't library/search, a page-level effect
+                  // wipes searchQuery on change, making the input impossible to
+                  // type into. Switch to the library tab so typing actually sticks.
+                  if (activeTab !== "library" && activeTab !== "search") {
+                    setActiveTab("library");
+                  }
+                  setSearchQuery(e.target.value);
+                }}
                 onKeyDown={async (e) => {
                   if (e.key === "Enter" && searchQuery.trim()) {
                     setActiveTab("search");
@@ -234,6 +244,7 @@ export default function AppNav({
         <div className="relative">
           <div
             ref={tabsRef}
+            data-testid="app-tab-strip"
             className="flex gap-0.5 overflow-x-auto pr-10 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
           >
             <div aria-hidden className="shrink-0 w-4 sm:hidden" />
