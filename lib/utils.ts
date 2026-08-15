@@ -61,29 +61,48 @@ export function parseFilename(filename: string): {
   }
 
   // Try to extract year without parens: "Movie Name 2020" or "Movie.Name.2020"
-  // ONLY if it's followed by a known tag or end of string, to avoid cutting names like "13 Tzameti" or "One Eight Seven"
+  // ONLY if it's followed by a known tag or end of string, to avoid cutting names like "13 Tzameti" or "One Eight Seven".
+  // Prefer a year that has title text in front of it, so films whose title IS a year
+  // ("1917.2019.1080p") keep their title; fall back to a leading year only when it is
+  // the sole candidate ("1917.mkv" is still year 1917 with an empty title).
   if (!year) {
-    const bareYear = name.match(/(?:^|[\.\s_-])(\d{4})(?:[\.\s_-]|$)/);
-    if (bareYear) {
-      const y = parseInt(bareYear[1], 10);
-      if (y >= 1900 && y <= 2099) {
-        // Look ahead for known release tags or end of string
-        const remaining = name
-          .substring(bareYear.index! + bareYear[0].length)
-          .toLowerCase();
-        const hasTag =
-          /\b(720p|1080p|2160p|bluray|dvdrip|xvid|webrip|web-dl|hdtv|x264|x265|aac|ac3)\b/i.test(
-            remaining,
-          );
-        const isEnd = remaining.trim().length === 0;
+    // Lookahead, not a consuming group: consuming the trailing separator would hide
+    // a second year sitting immediately after the first ("1917.2019").
+    const candidates = [
+      ...name.matchAll(/(?:^|[\.\s_-])(\d{4})(?=[\.\s_-]|$)/g),
+    ];
+    let chosen: { y: number; index: number } | null = null;
+    let leading: { y: number; index: number } | null = null;
 
-        if (hasTag || isEnd) {
-          year = y;
-          const match = bareYear[0];
-          const index = name.indexOf(match);
-          name = name.substring(0, index);
-        }
+    for (const m of candidates) {
+      const y = parseInt(m[1], 10);
+      if (y < 1900 || y > 2099) continue;
+
+      const index = m.index ?? 0;
+      // The lookahead left the separator in place, so strip it before testing for end.
+      const remaining = name
+        .substring(index + m[0].length)
+        .toLowerCase()
+        .replace(/^[\.\s_-]+/, "");
+      const hasTag =
+        /\b(720p|1080p|2160p|bluray|dvdrip|xvid|webrip|web-dl|hdtv|x264|x265|aac|ac3)\b/i.test(
+          remaining,
+        );
+      if (!hasTag && remaining.length > 0) continue;
+
+      if (name.substring(0, index).trim()) {
+        chosen = { y, index };
+        break;
       }
+      if (!leading) leading = { y, index };
+    }
+
+    const pick = chosen ?? leading;
+    if (pick) {
+      year = pick.y;
+      // Use the match index, not indexOf — with several candidates the same
+      // substring can occur earlier in the name.
+      name = name.substring(0, pick.index);
     }
   }
 

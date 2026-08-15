@@ -3,10 +3,9 @@ import { NextRequest } from "next/server";
 import { getDb, deleteMovie, Movie } from "@/lib/db";
 import { getErrorMessage } from "@/lib/utils";
 import { rateLimit } from "@/lib/rate-limit";
+import { SUBTITLE_EXTENSIONS } from "@/lib/subtitles";
 import fs from "fs";
 import path from "path";
-
-const SUBTITLE_EXTENSIONS = [".srt", ".ass", ".sub", ".txt", ".vtt"];
 const PROTECTED_FOLDER_NAMES = [
   "movies",
   "video",

@@ -213,6 +213,28 @@ describe("parseFilename", () => {
     expect(year).toBeNull();
   });
 
+  it("keeps the title when the movie title is itself a year", () => {
+    // The first bare year IS the title here. Truncating at it left an empty title,
+    // and lib/scanner.ts only yields files with a truthy title — so these were
+    // silently skipped by import and sync.
+    expect(parseFilename("1917.2019.1080p.BluRay.x264.mkv")).toMatchObject({
+      title: "1917",
+      year: 2019,
+    });
+    expect(parseFilename("2012.2009.1080p.mkv")).toMatchObject({
+      title: "2012",
+      year: 2009,
+    });
+  });
+
+  it("picks the release year, not a year that opens the title", () => {
+    const { title, year } = parseFilename(
+      "2001.A.Space.Odyssey.1968.1080p.mkv",
+    );
+    expect(title).toBe("2001 A Space Odyssey");
+    expect(year).toBe(1968);
+  });
+
   it("ignores out-of-range bare years", () => {
     const { year } = parseFilename("Movie.1850.1080p.mkv");
     expect(year).toBeNull();

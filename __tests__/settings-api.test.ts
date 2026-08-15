@@ -283,6 +283,21 @@ describe("settings API", () => {
       expect(rescheduleEpgJob).toHaveBeenCalledWith(db);
     });
 
+    it("reschedules the EPG job when epg_enabled is toggled on", async () => {
+      const res = await PATCH(makeRequest({ epg_enabled: true }));
+      expect(res.status).toBe(200);
+      expect(getSetting(db, "epg_enabled")).toBe("true");
+      // The flag alone decides whether the timer arms, so it must re-read on toggle.
+      expect(rescheduleEpgJob).toHaveBeenCalledWith(db);
+    });
+
+    it("reschedules the EPG job when epg_enabled is toggled off", async () => {
+      const res = await PATCH(makeRequest({ epg_enabled: false }));
+      expect(res.status).toBe(200);
+      expect(getSetting(db, "epg_enabled")).toBe("false");
+      expect(rescheduleEpgJob).toHaveBeenCalledWith(db);
+    });
+
     it("accepts 0 as valid epg_refresh_interval_hours (disabled)", async () => {
       const res = await PATCH(makeRequest({ epg_refresh_interval_hours: 0 }));
       expect(res.status).toBe(200);

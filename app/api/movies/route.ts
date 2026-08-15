@@ -17,7 +17,14 @@ export async function POST(request: NextRequest) {
   const limited = rateLimit(request, "mutation");
   if (limited) return limited;
   const db = getDb();
-  const body = await request.json();
+  // A malformed or empty body rejects here; without the guard the SyntaxError
+  // escapes the handler as an unhandled 500 instead of a 400.
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
   if (!body.title) {
     return Response.json({ error: "Title is required" }, { status: 400 });

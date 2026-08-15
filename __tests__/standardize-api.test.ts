@@ -6,15 +6,23 @@ import fs from "fs";
 import path from "path";
 import { initDb, insertMovie } from "@/lib/db";
 
-const { mockExistsSync, mockMkdir, mockRename, mockReaddir, mockRm, mockStat } =
-  vi.hoisted(() => ({
-    mockExistsSync: vi.fn(),
-    mockMkdir: vi.fn(),
-    mockRename: vi.fn(),
-    mockReaddir: vi.fn(),
-    mockRm: vi.fn(),
-    mockStat: vi.fn(),
-  }));
+const {
+  mockExistsSync,
+  mockMkdir,
+  mockRename,
+  mockReaddir,
+  mockRm,
+  mockStat,
+  mockReadFile,
+} = vi.hoisted(() => ({
+  mockExistsSync: vi.fn(),
+  mockMkdir: vi.fn(),
+  mockRename: vi.fn(),
+  mockReaddir: vi.fn(),
+  mockRm: vi.fn(),
+  mockStat: vi.fn(),
+  mockReadFile: vi.fn(),
+}));
 
 vi.mock("fs/promises", () => ({
   default: {
@@ -23,12 +31,14 @@ vi.mock("fs/promises", () => ({
     readdir: mockReaddir,
     rm: mockRm,
     stat: mockStat,
+    readFile: mockReadFile,
   },
   mkdir: mockMkdir,
   rename: mockRename,
   readdir: mockReaddir,
   rm: mockRm,
   stat: mockStat,
+  readFile: mockReadFile,
 }));
 
 vi.mock("fs", async (importOriginal) => {
@@ -76,6 +86,10 @@ describe("movies/[id]/standardize POST handler", () => {
     mockReaddir.mockResolvedValue([]);
     mockRm.mockResolvedValue(undefined);
     mockStat.mockResolvedValue({ size: 0 });
+    // Subtitle sniffing reads the file; default to genuine SubRip content.
+    mockReadFile.mockResolvedValue(
+      Buffer.from("1\r\n00:00:01,000 --> 00:00:02,000\r\nHello\r\n", "utf8"),
+    );
   });
 
   afterEach(() => {
@@ -481,6 +495,106 @@ describe("movies/[id]/standardize POST handler", () => {
     expect(subCall).toBeDefined();
     expect(subCall![0]).toBe("/library/old_folder/inception_1080p.srt");
     expect(subCall![1]).toBe("/library/Inception [2010]/Inception.srt");
+  });
+
+  it("sanitizes the subtitle name the same way as the movie file", async () => {
+    // A title containing "/" used to produce a subtitle path into a directory that
+    // does not exist, failing the rename after the video had already been moved.
+    movieId = insertMovie(db, {
+      title: "Face/Off",
+      year: 1997,
+      genre: null,
+      director: null,
+      rating: null,
+      poster_url: null,
+      source: "tmdb",
+      imdb_id: null,
+      tmdb_id: 754,
+      type: "movie",
+    });
+    const oldPath = "/library/old_folder/face.off.1997.mkv";
+    db.prepare("UPDATE movies SET file_path = ? WHERE id = ?").run(
+      oldPath,
+      movieId,
+    );
+
+    mockExistsSync.mockImplementation((p: string) => p === oldPath);
+    mockReaddir.mockResolvedValue(["face.off.1997.mkv", "face.off.1997.srt"]);
+
+    const res = await POST(postReq(movieId), makeParams(movieId));
+    expect(res.status).toBe(200);
+
+    const renameCalls = mockRename.mock.calls as [string, string][];
+    const subCall = renameCalls.find(([, dst]) => dst.endsWith(".srt"));
+    expect(subCall).toBeDefined();
+    // Matches the sanitized video basename, with no stray path separator.
+    expect(subCall![1]).toBe("/library/Face Off [1997]/Face Off.srt");
+  });
+
+  it("gives the subtitle the same CD suffix as the movie file", async () => {
+    movieId = insertMovie(db, {
+      title: "Inception",
+      year: 2010,
+      genre: null,
+      director: null,
+      rating: null,
+      poster_url: null,
+      source: "tmdb",
+      imdb_id: null,
+      tmdb_id: 27205,
+      type: "movie",
+    });
+    const oldPath = "/library/old_folder/inception_cd1.mkv";
+    db.prepare("UPDATE movies SET file_path = ? WHERE id = ?").run(
+      oldPath,
+      movieId,
+    );
+
+    mockExistsSync.mockImplementation((p: string) => p === oldPath);
+    mockReaddir.mockResolvedValue(["inception_cd1.mkv", "inception_cd1.srt"]);
+
+    const res = await POST(postReq(movieId), makeParams(movieId));
+    expect(res.status).toBe(200);
+
+    const renameCalls = mockRename.mock.calls as [string, string][];
+    const subCall = renameCalls.find(([, dst]) => dst.endsWith(".srt"));
+    expect(subCall).toBeDefined();
+    // Without the CD suffix the subtitle would no longer match the video basename.
+    expect(subCall![1]).toBe("/library/Inception [2010]/Inception CD1.srt");
+  });
+
+  it("renames a MicroDVD payload that was named .srt to .sub", async () => {
+    movieId = insertMovie(db, {
+      title: "Inception",
+      year: 2010,
+      genre: null,
+      director: null,
+      rating: null,
+      poster_url: null,
+      source: "tmdb",
+      imdb_id: null,
+      tmdb_id: 27205,
+      type: "movie",
+    });
+    const oldPath = "/library/old_folder/inception_1080p.mkv";
+    db.prepare("UPDATE movies SET file_path = ? WHERE id = ?").run(
+      oldPath,
+      movieId,
+    );
+
+    mockExistsSync.mockImplementation((p: string) => p === oldPath);
+    mockReaddir.mockResolvedValue(["inception_1080p.mkv", "inception_1080p.srt"]);
+    mockReadFile.mockResolvedValue(
+      Buffer.from("{1227}{1372}Frames, not timestamps", "utf8"),
+    );
+
+    const res = await POST(postReq(movieId), makeParams(movieId));
+    expect(res.status).toBe(200);
+
+    const renameCalls = mockRename.mock.calls as [string, string][];
+    const subCall = renameCalls.find(([src]) => src.endsWith(".srt"));
+    expect(subCall).toBeDefined();
+    expect(subCall![1]).toBe("/library/Inception [2010]/Inception.sub");
   });
 
   it("deletes old directory after moving file to standard path", async () => {
