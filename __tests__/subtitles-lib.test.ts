@@ -187,6 +187,64 @@ describe("normalizeSubtitle", () => {
     );
   });
 
+  it("converts WebVTT that omits the hours field", () => {
+    const noHours = [
+      "WEBVTT",
+      "",
+      "00:51.176 --> 00:57.224",
+      "First line",
+      "",
+      "01:12.656 --> 01:14.741",
+      "Second line",
+      "",
+    ].join("\n");
+    const result = normalizeSubtitle(Buffer.from(noHours, "utf8"), {
+      fallbackExtension: ".srt",
+    });
+
+    expect(result.format).toBe("vtt");
+    expect(result.converted).toBe(true);
+    expect(result.cueCount).toBe(2);
+    const text = result.content.toString("utf8");
+    expect(text).toContain("00:00:51,176 --> 00:00:57,224");
+    expect(text).toContain("00:01:12,656 --> 00:01:14,741");
+  });
+
+  it("keeps every cue when a WebVTT file mixes hour-less and hour-bearing stamps", () => {
+    const mixed = [
+      "WEBVTT",
+      "",
+      "00:51.176 --> 00:57.224",
+      "Early",
+      "",
+      "59:30.000 --> 59:32.000",
+      "Just before the hour",
+      "",
+      "01:00:12.000 --> 01:00:14.000",
+      "After the hour",
+      "",
+    ].join("\n");
+    const result = normalizeSubtitle(Buffer.from(mixed, "utf8"));
+
+    // The hour-less cues used to be dropped silently, losing most of the file.
+    expect(result.cueCount).toBe(3);
+    const text = result.content.toString("utf8");
+    expect(text).toContain("00:00:51,176");
+    expect(text).toContain("00:59:30,000");
+    expect(text).toContain("01:00:12,000");
+  });
+
+  it("names an unparsable WebVTT payload .vtt rather than the uploaded extension", () => {
+    // Header present, but no cue survives — it must not be stored as .srt.
+    const result = normalizeSubtitle(Buffer.from("WEBVTT\n\nNOTE nothing\n", "utf8"), {
+      fallbackExtension: ".srt",
+    });
+
+    expect(result.format).toBe("vtt");
+    expect(result.converted).toBe(false);
+    expect(result.extension).toBe(".vtt");
+  });
+
   it("renumbers SubRip cues and keeps them intact", () => {
     const result = normalizeSubtitle(Buffer.from(SRT_SAMPLE, "utf8"));
 

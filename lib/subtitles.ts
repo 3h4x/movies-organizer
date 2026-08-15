@@ -19,6 +19,19 @@ export type SubtitleFormat =
 /** Frame rate assumed for frame-based formats when the video can't be probed. */
 export const DEFAULT_FPS = 23.976;
 
+/**
+ * File extensions treated as subtitles when scanning, moving, deleting or accepting
+ * uploads. Single source of truth: three routes used to keep private copies of this
+ * list and they had already drifted apart.
+ */
+export const SUBTITLE_EXTENSIONS: readonly string[] = [
+  ".srt",
+  ".sub",
+  ".txt",
+  ".ass",
+  ".vtt",
+];
+
 /** Formats we can rewrite into SubRip. `ass` is left alone — it is already a real format. */
 const CONVERTIBLE: ReadonlySet<SubtitleFormat> = new Set<SubtitleFormat>([
   "srt",
@@ -31,8 +44,9 @@ const CONVERTIBLE: ReadonlySet<SubtitleFormat> = new Set<SubtitleFormat>([
 const MICRODVD_LINE = /^\{(\d+)\}\{(\d*)\}(.*)$/;
 const MPL2_LINE = /^\[(\d+)\]\[(\d*)\](.*)$/;
 const TMP_LINE = /^(\d{1,2}):([0-5]\d):([0-5]\d):(.*)$/;
+/** WebVTT may omit the hours field ("00:51.176"); SubRip always carries it. */
 const SRT_TIMESTAMP =
-  /\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}\s*-->\s*\d{1,2}:\d{2}:\d{2}[,.]\d{1,3}/;
+  /(?:\d{1,2}:)?\d{1,2}:\d{2}[,.]\d{1,3}\s*-->\s*(?:\d{1,2}:)?\d{1,2}:\d{2}[,.]\d{1,3}/;
 /** MicroDVD styling codes such as {y:i} or {c:$FF00FF} — strip, never render. */
 const MICRODVD_CONTROL = /\{[a-zA-Z]:[^}]*\}/g;
 
@@ -258,10 +272,14 @@ function parseTimedBlocks(text: string): Cue[] {
 }
 
 function parseTimestamp(value: string): number | null {
-  const match = /(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})/.exec(value);
+  // The hours group is optional and greedy, so "00:00:51,176" still binds
+  // hours=00 while "00:51.176" falls back to minutes=00, seconds=51.
+  const match = /(?:(\d{1,2}):)?(\d{1,2}):(\d{2})[,.](\d{1,3})/.exec(value);
   if (!match) return null;
+  // `?? 0` is load-bearing: an absent optional group is undefined, and
+  // Number(undefined) is NaN, which would poison every timestamp downstream.
   return (
-    Number(match[1]) * 3600 +
+    Number(match[1] ?? 0) * 3600 +
     Number(match[2]) * 60 +
     Number(match[3]) +
     Number(match[4].padEnd(3, "0")) / 1000
@@ -329,7 +347,11 @@ export function normalizeSubtitle(
   }
 
   // Nothing parsed out — keep the original bytes rather than write an empty file.
-  if (cues.length === 0) return passThrough(fallbackExtension);
+  // A WebVTT payload still has to be named .vtt: storing it as .srt is exactly the
+  // mislabelling this module exists to prevent.
+  if (cues.length === 0) {
+    return passThrough(format === "vtt" ? ".vtt" : fallbackExtension);
+  }
 
   return {
     format,

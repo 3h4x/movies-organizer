@@ -203,7 +203,7 @@ describe("movies/[id]/stream GET handler", () => {
 
     it("serves a VTT subtitle file as-is", async () => {
       const vttContent = "WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nHello";
-      mockReadFile.mockResolvedValue(vttContent);
+      mockReadFile.mockResolvedValue(Buffer.from(vttContent, "utf8"));
 
       const res = await GET(getReq(movieId, { sub: "Dune.vtt" }), makeParams(movieId));
       expect(res.status).toBe(200);
@@ -211,15 +211,13 @@ describe("movies/[id]/stream GET handler", () => {
       expect(res.headers.get("Content-Disposition")).toBe("inline");
       const text = await res.text();
       expect(text).toBe(vttContent);
-      expect(mockReadFile).toHaveBeenCalledWith(
-        path.join(SUB_DIR, "Dune.vtt"),
-        "utf-8",
-      );
+      // Read as bytes, not as a UTF-8 string — the encoding is sniffed, not assumed.
+      expect(mockReadFile).toHaveBeenCalledWith(path.join(SUB_DIR, "Dune.vtt"));
     });
 
     it("converts SRT to VTT format", async () => {
       const srtContent = "1\n00:00:01,000 --> 00:00:03,000\nHello world\n";
-      mockReadFile.mockResolvedValue(srtContent);
+      mockReadFile.mockResolvedValue(Buffer.from(srtContent, "utf8"));
 
       const res = await GET(getReq(movieId, { sub: "Dune.srt" }), makeParams(movieId));
       expect(res.status).toBe(200);
@@ -227,6 +225,48 @@ describe("movies/[id]/stream GET handler", () => {
       const text = await res.text();
       expect(text).toMatch(/^WEBVTT/);
       expect(text).toContain("00:00:01.000 --> 00:00:03.000");
+    });
+
+    it("converts a MicroDVD payload served under a .sub name", async () => {
+      // standardize deliberately renames MicroDVD to .sub; the old extension-based
+      // branch shipped the raw frame markers under text/vtt and the track died.
+      mockReadFile.mockResolvedValue(
+        Buffer.from("{24}{48}Hello world", "utf8"),
+      );
+
+      const res = await GET(getReq(movieId, { sub: "Dune.sub" }), makeParams(movieId));
+      expect(res.status).toBe(200);
+      const text = await res.text();
+      expect(text).toMatch(/^WEBVTT/);
+      expect(text).toContain("-->");
+      expect(text).toContain("Hello world");
+      expect(text).not.toContain("{24}");
+    });
+
+    it("decodes a windows-1250 subtitle without mojibake", async () => {
+      // "TYTUŁU" in CP1250 — 0xA3 is invalid UTF-8, so a forced utf-8 read
+      // used to turn every Polish diacritic into U+FFFD.
+      const cp1250 = Buffer.concat([
+        Buffer.from("1\r\n00:00:01,000 --> 00:00:03,000\r\nTYTU", "latin1"),
+        Buffer.from([0xa3]),
+        Buffer.from("U\r\n", "latin1"),
+      ]);
+      mockReadFile.mockResolvedValue(cp1250);
+
+      const res = await GET(getReq(movieId, { sub: "Dune.srt" }), makeParams(movieId));
+      expect(res.status).toBe(200);
+      const text = await res.text();
+      expect(text).toContain("TYTUŁU");
+      expect(text).not.toContain("�");
+    });
+
+    it("returns 415 for a format a <track> cannot render", async () => {
+      mockReadFile.mockResolvedValue(
+        Buffer.from("[Script Info]\nScriptType: v4.00+\n", "utf8"),
+      );
+
+      const res = await GET(getReq(movieId, { sub: "Dune.ass" }), makeParams(movieId));
+      expect(res.status).toBe(415);
     });
 
     it("returns 404 when subtitle file does not exist", async () => {
@@ -254,13 +294,12 @@ describe("movies/[id]/stream GET handler", () => {
 
     it("allows subtitle in a valid subdirectory", async () => {
       const vttContent = "WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nSub";
-      mockReadFile.mockResolvedValue(vttContent);
+      mockReadFile.mockResolvedValue(Buffer.from(vttContent, "utf8"));
 
       const res = await GET(getReq(movieId, { sub: "subs/Dune.vtt" }), makeParams(movieId));
       expect(res.status).toBe(200);
       expect(mockReadFile).toHaveBeenCalledWith(
         path.join(SUB_DIR, "subs/Dune.vtt"),
-        "utf-8",
       );
     });
   });

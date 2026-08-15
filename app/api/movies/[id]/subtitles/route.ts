@@ -2,46 +2,11 @@ import { NextRequest } from "next/server";
 import { getDb, Movie } from "@/lib/db";
 import { getErrorMessage } from "@/lib/utils";
 import { rateLimit } from "@/lib/rate-limit";
-import { DEFAULT_FPS, normalizeSubtitle } from "@/lib/subtitles";
+import { SUBTITLE_EXTENSIONS, normalizeSubtitle } from "@/lib/subtitles";
+import { probeFps } from "@/lib/ffprobe";
 import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
-import { execFile } from "child_process";
-import { promisify } from "util";
-
-const execFileAsync = promisify(execFile);
-
-const SUBTITLE_EXTENSIONS = [".srt", ".sub", ".txt", ".ass"];
-
-/**
- * Frame rate of the movie, needed to turn frame-based subtitles (MicroDVD) into
- * timestamps. Falls back to the common film rate when ffprobe is unavailable —
- * a slightly wrong rate still beats refusing the upload.
- */
-async function probeFps(filePath: string): Promise<number> {
-  try {
-    const { stdout } = await execFileAsync(
-      "ffprobe",
-      [
-        "-v",
-        "error",
-        "-select_streams",
-        "v:0",
-        "-show_entries",
-        "stream=r_frame_rate",
-        "-of",
-        "default=nw=1:nk=1",
-        filePath,
-      ],
-      { timeout: 30000 },
-    );
-    const [num, den] = stdout.trim().split("/");
-    const fps = den ? Number(num) / Number(den) : Number(num);
-    return Number.isFinite(fps) && fps >= 10 && fps <= 120 ? fps : DEFAULT_FPS;
-  } catch {
-    return DEFAULT_FPS;
-  }
-}
 
 export async function GET(
   _request: NextRequest,
@@ -141,8 +106,7 @@ export async function POST(
     if (!SUBTITLE_EXTENSIONS.includes(originalExt)) {
       return Response.json(
         {
-          error:
-            "Invalid subtitle extension. Supported: .srt, .sub, .txt, .ass",
+          error: `Invalid subtitle extension. Supported: ${SUBTITLE_EXTENSIONS.join(", ")}`,
         },
         { status: 400 },
       );

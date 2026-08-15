@@ -415,6 +415,25 @@ describe("movies/[id]/subtitles POST handler", () => {
     expect(body.fileName).toBe("Inception.srt");
   });
 
+  it("accepts a .vtt upload and converts it to SubRip", async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockWriteFile.mockResolvedValue(undefined);
+
+    const file = new File(
+      ["WEBVTT\n\n00:00:51.176 --> 00:00:57.224\nHello\n"],
+      "movie.vtt",
+      { type: "text/vtt" },
+    );
+    const req = makePostReq(movieId, file);
+    const res = await POST(req, makeParams(movieId));
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.format).toBe("vtt");
+    expect(body.converted).toBe(true);
+    expect(body.fileName).toBe("Inception.srt");
+  });
+
   it("keeps the uploaded extension when the content is unrecognisable", async () => {
     mockExistsSync.mockReturnValue(true);
     mockWriteFile.mockResolvedValue(undefined);
