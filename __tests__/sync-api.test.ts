@@ -154,7 +154,6 @@ describe("sync API route", () => {
     const complete = events.find((e) => e.type === "complete");
     expect(complete!.linked).toBe(1);
     expect(complete!.added).toBe(0);
-    expect(searchTmdb).not.toHaveBeenCalled();
 
     const movies = db.prepare("SELECT * FROM movies").all() as { file_path: string }[];
     expect(movies).toHaveLength(1);
@@ -438,7 +437,6 @@ describe("sync API route", () => {
     const complete = events.find((e) => e.type === "complete");
     expect(complete!.linked).toBe(1);
     expect(complete!.added).toBe(0);
-    expect(searchTmdb).not.toHaveBeenCalled();
 
     const movies = db.prepare("SELECT * FROM movies").all() as { file_path: string; source: string }[];
     expect(movies).toHaveLength(1);
@@ -483,10 +481,97 @@ describe("sync API route", () => {
     expect(complete!.linked).toBe(1);
     expect(complete!.added).toBe(0);
 
-    const movies = db.prepare("SELECT * FROM movies").all() as { title: string; file_path: string }[];
+    const movies = db.prepare(
+      "SELECT title, file_path, genre, rating, imdb_id FROM movies",
+    ).all() as Array<{
+      title: string;
+      file_path: string;
+      genre: string | null;
+      rating: number | null;
+      imdb_id: string | null;
+    }>;
     expect(movies).toHaveLength(1);
-    expect(movies[0].title).toBe("Adwokat");
-    expect(movies[0].file_path).toBe("/movies/The.Counselor.2013.mkv");
+    expect(movies[0]).toMatchObject({
+      title: "Adwokat",
+      file_path: "/movies/The.Counselor.2013.mkv",
+      genre: "Drama",
+      rating: 5.3,
+      imdb_id: "tt2193215",
+    });
+  });
+
+  it("enriches a linked pathless row with TMDb metadata while preserving user-owned fields", async () => {
+    setSetting(db as unknown as ReturnType<typeof getDb>, "library_path", "/movies");
+    db.prepare(
+      "INSERT INTO movies (title, year, source, type, user_rating, wishlist, filmweb_id, filmweb_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    ).run(
+      "The Counselor",
+      null,
+      "filmweb",
+      "movie",
+      9,
+      1,
+      12345,
+      "https://filmweb.example/the-counselor",
+    );
+
+    vi.mocked(scanDirectoryGenerator).mockReturnValue(
+      (function* () {
+        yield {
+          filename: "The.Counselor.2013.mkv",
+          filePath: "/movies/The.Counselor.2013.mkv",
+          parsedTitle: "The Counselor",
+          parsedYear: 2013,
+        };
+      })(),
+    );
+    vi.mocked(searchTmdb).mockResolvedValue([
+      {
+        title: "The Counselor",
+        year: 2013,
+        genre: "Drama",
+        rating: 5.3,
+        poster_url: "/poster.jpg",
+        imdb_id: "tt2193215",
+        tmdb_id: 109091,
+      },
+    ]);
+
+    const res = await POST();
+    const events = await readNDJSON(res);
+
+    const complete = events.find((e) => e.type === "complete");
+    expect(complete!.linked).toBe(1);
+    expect(complete!.added).toBe(0);
+
+    const row = db.prepare(
+      "SELECT year, file_path, tmdb_id, imdb_id, genre, rating, poster_url, user_rating, wishlist, filmweb_id, filmweb_url FROM movies WHERE title = ?",
+    ).get("The Counselor") as {
+      year: number | null;
+      file_path: string | null;
+      tmdb_id: number | null;
+      imdb_id: string | null;
+      genre: string | null;
+      rating: number | null;
+      poster_url: string | null;
+      user_rating: number | null;
+      wishlist: number;
+      filmweb_id: number | null;
+      filmweb_url: string | null;
+    };
+    expect(row).toMatchObject({
+      year: 2013,
+      file_path: "/movies/The.Counselor.2013.mkv",
+      tmdb_id: 109091,
+      imdb_id: "tt2193215",
+      genre: "Drama",
+      rating: 5.3,
+      poster_url: "/poster.jpg",
+      user_rating: 9,
+      wishlist: 1,
+      filmweb_id: 12345,
+      filmweb_url: "https://filmweb.example/the-counselor",
+    });
   });
 
   it("links to existing pathless row by title+year when TMDb throws (no duplicate local row)", async () => {
@@ -527,6 +612,131 @@ describe("sync API route", () => {
     expect(movies).toHaveLength(1);
     expect(movies[0].source).toBe("filmweb");
     expect(movies[0].file_path).toBe("/movies/Some.Film.2000.mkv");
+  });
+
+  it("does not enrich a linked pathless row from a far-off TMDb fallback result", async () => {
+    setSetting(db as unknown as ReturnType<typeof getDb>, "library_path", "/movies");
+    db.prepare(
+      "INSERT INTO movies (title, year, source, type, wishlist) VALUES (?, ?, ?, ?, ?)",
+    ).run("Spider-Man: Homecoming", 2017, "filmweb", "movie", 1);
+
+    vi.mocked(scanDirectoryGenerator).mockReturnValue(
+      (function* () {
+        yield {
+          filename: "Spider.Man.Homecoming.2018.1080p.mkv",
+          filePath: "/movies/Spider.Man.Homecoming.2018.1080p.mkv",
+          parsedTitle: "Spider Man Homecoming",
+          parsedYear: 2018,
+        };
+      })(),
+    );
+    vi.mocked(searchTmdb).mockResolvedValue([
+      {
+        title: "Spider-Man: No Way Home",
+        year: 2021,
+        genre: "Action",
+        rating: 8.2,
+        poster_url: "/spider-man-no-way-home.jpg",
+        imdb_id: "tt10872600",
+        tmdb_id: 634649,
+      },
+    ]);
+
+    const res = await POST();
+    const events = await readNDJSON(res);
+
+    const complete = events.find((e) => e.type === "complete");
+    expect(complete!.linked).toBe(1);
+    expect(complete!.added).toBe(0);
+
+    const row = db.prepare(
+      "SELECT file_path, tmdb_id, imdb_id, genre, rating, poster_url, wishlist FROM movies WHERE title = ?",
+    ).get("Spider-Man: Homecoming") as {
+      file_path: string | null;
+      tmdb_id: number | null;
+      imdb_id: string | null;
+      genre: string | null;
+      rating: number | null;
+      poster_url: string | null;
+      wishlist: number;
+    };
+    expect(row).toMatchObject({
+      file_path: "/movies/Spider.Man.Homecoming.2018.1080p.mkv",
+      tmdb_id: null,
+      imdb_id: null,
+      genre: null,
+      rating: null,
+      poster_url: null,
+      wishlist: 1,
+    });
+  });
+
+  it("counts fallback TMDb merges into existing pathless rows as linked, not added", async () => {
+    setSetting(db as unknown as ReturnType<typeof getDb>, "library_path", "/movies");
+    insertMovie(db as unknown as ReturnType<typeof getDb>, {
+      title: "Adwokat",
+      year: 2013,
+      genre: null,
+      director: null,
+      rating: null,
+      poster_url: null,
+      source: "filmweb",
+      imdb_id: null,
+      tmdb_id: 109091,
+      type: "movie",
+      wishlist: 1,
+    });
+
+    vi.mocked(scanDirectoryGenerator).mockReturnValue(
+      (function* () {
+        yield {
+          filename: "Bad.Filename.2013.mkv",
+          filePath: "/movies/Bad.Filename.2013.mkv",
+          parsedTitle: "Bad Filename",
+          parsedYear: 2013,
+        };
+      })(),
+    );
+    vi.mocked(searchTmdb).mockResolvedValue([
+      {
+        title: "The Counselor",
+        year: 2013,
+        genre: "Drama",
+        rating: 5.3,
+        poster_url: "/poster.jpg",
+        imdb_id: "tt2193215",
+        tmdb_id: 109091,
+      },
+    ]);
+
+    const res = await POST();
+    const events = await readNDJSON(res);
+
+    const complete = events.find((e) => e.type === "complete");
+    expect(complete!.linked).toBe(1);
+    expect(complete!.added).toBe(0);
+
+    const rows = db.prepare(
+      "SELECT title, file_path, tmdb_id, genre, rating, poster_url, wishlist FROM movies",
+    ).all() as Array<{
+      title: string;
+      file_path: string | null;
+      tmdb_id: number | null;
+      genre: string | null;
+      rating: number | null;
+      poster_url: string | null;
+      wishlist: number;
+    }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      title: "Adwokat",
+      file_path: "/movies/Bad.Filename.2013.mkv",
+      tmdb_id: 109091,
+      genre: "Drama",
+      rating: 5.3,
+      poster_url: "/poster.jpg",
+      wishlist: 1,
+    });
   });
 
   it("emits scanning progress events during phase 1", async () => {

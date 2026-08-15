@@ -417,6 +417,7 @@ function enrichMissingMetadata(
   db: Database.Database,
   id: number,
   existing: {
+    year?: number | null;
     genre: string | null;
     rating: number | null;
     poster_url: string | null;
@@ -439,6 +440,7 @@ function enrichMissingMetadata(
 ): void {
   const sets: string[] = [];
   const values: (string | number | null)[] = [];
+  if ("year" in existing && existing.year == null && incoming.year != null) { sets.push("year = ?"); values.push(incoming.year); }
   if (!existing.genre && incoming.genre) { sets.push("genre = ?"); values.push(incoming.genre); }
   if (!existing.rating && incoming.rating) { sets.push("rating = ?"); values.push(incoming.rating); }
   if (!existing.poster_url && incoming.poster_url) { sets.push("poster_url = ?"); values.push(incoming.poster_url); }
@@ -461,6 +463,98 @@ function enrichMissingMetadata(
   db.prepare(`UPDATE movies SET ${sets.join(", ")} WHERE id = ?`).run(...values);
 }
 
+export function enrichMovieMetadata(
+  db: Database.Database,
+  id: number,
+  incoming: MovieInput,
+): void {
+  const existing = db
+    .prepare(
+      "SELECT year, genre, rating, poster_url, imdb_id, tmdb_id, user_rating, pl_title, filmweb_id, filmweb_url, rated_at, wishlist, description, cda_url, video_metadata FROM movies WHERE id = ?",
+    )
+    .get(id) as
+    | {
+        year: number | null;
+        genre: string | null;
+        rating: number | null;
+        poster_url: string | null;
+        imdb_id: string | null;
+        tmdb_id: number | null;
+        user_rating: number | null;
+        pl_title: string | null;
+        filmweb_id: number | null;
+        filmweb_url: string | null;
+        rated_at: string | null;
+        wishlist: number | null;
+        description: string | null;
+        cda_url: string | null;
+        video_metadata: string | null;
+      }
+    | undefined;
+  if (!existing) return;
+  enrichMissingMetadata(db, id, existing, incoming);
+}
+
+export function movieNeedsTmdbEnrichment(
+  db: Database.Database,
+  id: number,
+): boolean {
+  const existing = db
+    .prepare(
+      "SELECT year, genre, rating, poster_url, imdb_id, tmdb_id FROM movies WHERE id = ?",
+    )
+    .get(id) as
+    | {
+        year: number | null;
+        genre: string | null;
+        rating: number | null;
+        poster_url: string | null;
+        imdb_id: string | null;
+        tmdb_id: number | null;
+      }
+    | undefined;
+  if (!existing) return false;
+  // Deliberately NOT checking imdb_id: TMDb's search endpoint never returns it
+  // (mapResult in lib/tmdb.ts hardcodes null), so requiring it here would mean
+  // the row can never be considered enriched and every import/sync would query
+  // TMDb for it again forever.
+  return (
+    existing.year == null ||
+    existing.genre == null ||
+    existing.rating == null ||
+    existing.poster_url == null ||
+    existing.tmdb_id == null
+  );
+}
+
+export function getExistingMovieInsertTargetId(
+  db: Database.Database,
+  movie: MovieInput,
+): number | null {
+  if (movie.file_path) {
+    const byFilePath = db
+      .prepare("SELECT id FROM movies WHERE file_path = ?")
+      .get(movie.file_path) as { id: number } | undefined;
+    if (byFilePath) return byFilePath.id;
+  }
+
+  if (movie.tmdb_id) {
+    const byTmdbId = db
+      .prepare("SELECT id FROM movies WHERE tmdb_id = ?")
+      .get(movie.tmdb_id) as { id: number } | undefined;
+    if (byTmdbId) return byTmdbId.id;
+  }
+
+  if (movie.title) {
+    const byTitleYear = db
+      .prepare("SELECT id FROM movies WHERE LOWER(title) = LOWER(?) AND year IS ?")
+      .get(movie.title, movie.year ?? null) as { id: number } | undefined;
+    if (byTitleYear) return byTitleYear.id;
+  }
+
+  return null;
+}
+
 export function insertMovie(db: Database.Database, movie: MovieInput): number {
   if (movie.file_path) {
     const existing = db
@@ -472,8 +566,8 @@ export function insertMovie(db: Database.Database, movie: MovieInput): number {
   // If a movie with the same tmdb_id already exists, link the file to it
   if (movie.tmdb_id) {
     const byTmdbId = db
-      .prepare("SELECT id, file_path, extra_files, genre, rating, poster_url, imdb_id, user_rating, pl_title, filmweb_id, filmweb_url, rated_at, wishlist, description, cda_url, video_metadata, tmdb_collection_id, tmdb_collection_name, tmdb_collection_checked FROM movies WHERE tmdb_id = ?")
-      .get(movie.tmdb_id) as { id: number; file_path: string | null; extra_files: string | null; genre: string | null; rating: number | null; poster_url: string | null; imdb_id: string | null; user_rating: number | null; pl_title: string | null; filmweb_id: number | null; filmweb_url: string | null; rated_at: string | null; wishlist: number | null; description: string | null; cda_url: string | null; video_metadata: string | null; tmdb_collection_id: number | null; tmdb_collection_name: string | null; tmdb_collection_checked: number | null } | undefined;
+      .prepare("SELECT id, year, file_path, extra_files, genre, rating, poster_url, imdb_id, user_rating, pl_title, filmweb_id, filmweb_url, rated_at, wishlist, description, cda_url, video_metadata, tmdb_collection_id, tmdb_collection_name, tmdb_collection_checked FROM movies WHERE tmdb_id = ?")
+      .get(movie.tmdb_id) as { id: number; year: number | null; file_path: string | null; extra_files: string | null; genre: string | null; rating: number | null; poster_url: string | null; imdb_id: string | null; user_rating: number | null; pl_title: string | null; filmweb_id: number | null; filmweb_url: string | null; rated_at: string | null; wishlist: number | null; description: string | null; cda_url: string | null; video_metadata: string | null; tmdb_collection_id: number | null; tmdb_collection_name: string | null; tmdb_collection_checked: number | null } | undefined;
     if (byTmdbId) {
       if (movie.file_path) {
         if (!byTmdbId.file_path) {
@@ -499,9 +593,9 @@ export function insertMovie(db: Database.Database, movie: MovieInput): number {
   if (movie.title) {
     const byTitleYear = db
       .prepare(
-        "SELECT id, file_path, extra_files, genre, rating, poster_url, imdb_id, tmdb_id, user_rating, pl_title, filmweb_id, filmweb_url, rated_at, wishlist, description, cda_url, video_metadata, tmdb_collection_id, tmdb_collection_name, tmdb_collection_checked FROM movies WHERE LOWER(title) = LOWER(?) AND year IS ?",
+        "SELECT id, year, file_path, extra_files, genre, rating, poster_url, imdb_id, tmdb_id, user_rating, pl_title, filmweb_id, filmweb_url, rated_at, wishlist, description, cda_url, video_metadata, tmdb_collection_id, tmdb_collection_name, tmdb_collection_checked FROM movies WHERE LOWER(title) = LOWER(?) AND year IS ?",
       )
-      .get(movie.title, movie.year ?? null) as { id: number; file_path: string | null; extra_files: string | null; genre: string | null; rating: number | null; poster_url: string | null; imdb_id: string | null; tmdb_id: number | null; user_rating: number | null; pl_title: string | null; filmweb_id: number | null; filmweb_url: string | null; rated_at: string | null; wishlist: number | null; description: string | null; cda_url: string | null; video_metadata: string | null; tmdb_collection_id: number | null; tmdb_collection_name: string | null; tmdb_collection_checked: number | null } | undefined;
+      .get(movie.title, movie.year ?? null) as { id: number; year: number | null; file_path: string | null; extra_files: string | null; genre: string | null; rating: number | null; poster_url: string | null; imdb_id: string | null; tmdb_id: number | null; user_rating: number | null; pl_title: string | null; filmweb_id: number | null; filmweb_url: string | null; rated_at: string | null; wishlist: number | null; description: string | null; cda_url: string | null; video_metadata: string | null; tmdb_collection_id: number | null; tmdb_collection_name: string | null; tmdb_collection_checked: number | null } | undefined;
     if (byTitleYear) {
       if (movie.file_path) {
         if (!byTitleYear.file_path) {

@@ -1,7 +1,11 @@
 "use client";
 // tamtam inspected 2026-05-21
 import { useState } from "react";
-import { getCanonicalMatchingMovie, shouldAutoSearchTmdb } from "@/lib/search";
+import {
+  getCanonicalMatchingMovie,
+  shouldAutoSearchTmdb,
+  upsertCanonicalTmdbMovie,
+} from "@/lib/search";
 import type { Movie } from "@/lib/types";
 import type { TmdbSearchResult } from "@/lib/tmdb";
 import { cleanTitle } from "@/lib/utils";
@@ -220,7 +224,7 @@ export function useSearch({
     const data = await res.json();
     setSearchOpen(false);
 
-    const newMovie: Movie = {
+    const fallbackMovie: Movie = {
       id: data.id || Date.now(),
       title: searchResult.title,
       year: searchResult.year,
@@ -238,7 +242,26 @@ export function useSearch({
       created_at: new Date().toISOString(),
       wishlist: isWishlist ? 1 : 0,
     };
-    setMovies((prev) => [newMovie, ...prev]);
+
+    let persistedMovie = fallbackMovie;
+    if (typeof data.id === "number") {
+      const movieRes = await fetch(`/api/movies/${data.id}`);
+      if (movieRes.ok) {
+        const movieData = await movieRes.json();
+        if (movieData.movie) {
+          persistedMovie = movieData.movie;
+        }
+      }
+    }
+
+    setMovies((prev) =>
+      upsertCanonicalTmdbMovie(
+        prev,
+        searchResult.tmdb_id,
+        persistedMovie,
+        persistedMovie,
+      ),
+    );
     addToast(
       isWishlist
         ? `Added "${searchResult.title}" to watchlist`

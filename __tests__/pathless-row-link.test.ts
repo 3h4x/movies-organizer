@@ -32,12 +32,12 @@ describe("linkToExistingPathlessRow", () => {
     if (fs.existsSync(TEST_DB)) fs.unlinkSync(TEST_DB);
   });
 
-  it("returns false when no pathless row exists", () => {
+  it("returns null when no pathless row exists", () => {
     const linked = linkToExistingPathlessRow(db, makeFile(), null);
-    expect(linked).toBe(false);
+    expect(linked).toBeNull();
   });
 
-  it("returns false when a matching row already has a file_path", () => {
+  it("returns null when a matching row already has a file_path", () => {
     insertMovie(db, {
       title: "Inception",
       year: 2010,
@@ -52,10 +52,10 @@ describe("linkToExistingPathlessRow", () => {
       file_path: "/movies/other.mkv",
     });
     const linked = linkToExistingPathlessRow(db, makeFile(), { tmdb_id: 27205 });
-    expect(linked).toBe(false);
+    expect(linked).toBeNull();
   });
 
-  it("links by tmdb_id and returns true", () => {
+  it("links by tmdb_id and returns the linked row id", () => {
     const { lastInsertRowid } = db
       .prepare(
         "INSERT INTO movies (title, year, source, tmdb_id, type) VALUES (?, ?, 'filmweb', ?, 'movie')",
@@ -64,7 +64,7 @@ describe("linkToExistingPathlessRow", () => {
     const id = Number(lastInsertRowid);
 
     const linked = linkToExistingPathlessRow(db, makeFile(), { tmdb_id: 27205 });
-    expect(linked).toBe(true);
+    expect(linked).toBe(id);
 
     const row = db
       .prepare("SELECT file_path FROM movies WHERE id = ?")
@@ -81,7 +81,7 @@ describe("linkToExistingPathlessRow", () => {
     const id = Number(lastInsertRowid);
 
     const linked = linkToExistingPathlessRow(db, makeFile(), null);
-    expect(linked).toBe(true);
+    expect(linked).toBe(id);
 
     const row = db
       .prepare("SELECT file_path FROM movies WHERE id = ?")
@@ -98,7 +98,7 @@ describe("linkToExistingPathlessRow", () => {
     const id = Number(lastInsertRowid);
 
     const linked = linkToExistingPathlessRow(db, makeFile(), null);
-    expect(linked).toBe(true);
+    expect(linked).toBe(id);
 
     const row = db
       .prepare("SELECT file_path FROM movies WHERE id = ?")
@@ -112,7 +112,7 @@ describe("linkToExistingPathlessRow", () => {
     ).run("Inception", 2015);
 
     const linked = linkToExistingPathlessRow(db, makeFile(), null);
-    expect(linked).toBe(false);
+    expect(linked).toBeNull();
   });
 
   it("links by tmdb_id before falling through to title match", () => {
@@ -151,7 +151,7 @@ describe("linkToExistingPathlessRow", () => {
 
     const file = makeFile({ parsedTitle: "Casablanca", parsedYear: null, filePath: "/movies/casablanca.mkv" });
     const linked = linkToExistingPathlessRow(db, file, null);
-    expect(linked).toBe(true);
+    expect(linked).toBe(id);
 
     const row = db
       .prepare("SELECT file_path FROM movies WHERE id = ?")

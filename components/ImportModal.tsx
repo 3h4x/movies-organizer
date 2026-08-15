@@ -7,6 +7,7 @@ import Button from "./ui/Button";
 
 interface ImportResult {
   added: number;
+  linked: number;
   skipped: number;
   failed: number;
   total: number;
@@ -230,6 +231,12 @@ export default function ImportModal({
                 <span className="w-2 h-2 rounded-full bg-green-400" />
                 <span className="text-gray-400">
                   Added: <span className="text-white">{result.added}</span>
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-sky-400" />
+                <span className="text-gray-400">
+                  Linked: <span className="text-white">{result.linked}</span>
                 </span>
               </div>
               <div className="flex items-center gap-2">

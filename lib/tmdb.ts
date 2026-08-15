@@ -35,6 +35,14 @@ interface TmdbRawResult {
   genre_ids: number[];
   vote_average: number;
   poster_path: string | null;
+  popularity?: number;
+}
+
+interface TmdbRawPersonResult {
+  id: number;
+  name: string;
+  popularity: number;
+  known_for_department?: string | null;
 }
 
 interface TmdbRawMovie {
@@ -228,6 +236,56 @@ function mapResult(r: TmdbRawResult): TmdbSearchResult {
     tmdb_id: r.id,
     imdb_id: null,
   };
+}
+
+function getDepartmentPriority(department?: string | null): number {
+  switch (department) {
+    case "Acting":
+      return 0;
+    case "Directing":
+      return 1;
+    case "Writing":
+      return 2;
+    default:
+      return 3;
+  }
+}
+
+function getReleaseTimestamp(releaseDate: string | null): number {
+  if (!releaseDate) return 0;
+  const timestamp = Date.parse(releaseDate);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function sortPeopleResults(results: TmdbRawPersonResult[]): TmdbRawPersonResult[] {
+  return [...results].sort((a, b) => {
+    if (a.popularity !== b.popularity) {
+      return b.popularity - a.popularity;
+    }
+
+    const departmentDiff =
+      getDepartmentPriority(a.known_for_department) - getDepartmentPriority(b.known_for_department);
+    if (departmentDiff !== 0) return departmentDiff;
+
+    return a.name.localeCompare(b.name);
+  });
+}
+
+function sortPersonFallbackMovieResults(results: TmdbRawResult[]): TmdbRawResult[] {
+  return [...results].sort((a, b) => {
+    if ((a.popularity || 0) !== (b.popularity || 0)) {
+      return (b.popularity || 0) - (a.popularity || 0);
+    }
+
+    const releaseDiff = getReleaseTimestamp(b.release_date) - getReleaseTimestamp(a.release_date);
+    if (releaseDiff !== 0) return releaseDiff;
+
+    if (a.vote_average !== b.vote_average) {
+      return b.vote_average - a.vote_average;
+    }
+
+    return a.title.localeCompare(b.title);
+  });
 }
 
 export interface TmdbSearchResult {
@@ -458,6 +516,53 @@ export async function searchTmdb(
   }
 
   return results;
+}
+
+export async function searchTmdbForUi(query: string): Promise<TmdbSearchResult[]> {
+  const movieResults = await searchTmdb(query);
+  if (movieResults.length > 0) return movieResults;
+
+  const apiKey = getApiKey();
+  const peopleRes = await fetchWithRetry(
+    `${TMDB_BASE}/search/person?query=${encodeURIComponent(query)}&language=en-US&page=1`,
+    apiKey,
+  );
+  if (!peopleRes.ok) {
+    const body = await peopleRes.text().catch(() => "");
+    console.error(`[TMDb] searchTmdbForUi person search failed: ${peopleRes.status} ${peopleRes.statusText}`, body);
+    throw new Error(`tmdb_api_error:${peopleRes.status}`);
+  }
+
+  const peopleData = (await peopleRes.json()) as { results?: TmdbRawPersonResult[] };
+  const topPeople = sortPeopleResults(peopleData.results || []).slice(0, 3);
+  if (topPeople.length === 0) return [];
+
+  const dedupedMovies = new Map<number, TmdbRawResult>();
+  for (const person of topPeople) {
+    const creditsRes = await fetchWithRetry(
+      `${TMDB_BASE}/person/${person.id}/movie_credits?language=en-US`,
+      apiKey,
+    );
+    if (!creditsRes.ok) continue;
+
+    const creditsData = (await creditsRes.json()) as {
+      cast?: TmdbRawResult[];
+      crew?: TmdbRawResult[];
+    };
+
+    for (const credit of [...(creditsData.cast || []), ...(creditsData.crew || [])]) {
+      if (!credit?.id || !credit.title) continue;
+
+      const existing = dedupedMovies.get(credit.id);
+      if (!existing || (credit.popularity || 0) > (existing.popularity || 0)) {
+        dedupedMovies.set(credit.id, credit);
+      }
+    }
+  }
+
+  return sortPersonFallbackMovieResults([...dedupedMovies.values()])
+    .slice(0, 10)
+    .map(mapResult);
 }
 
 export async function getMovieLocalized(

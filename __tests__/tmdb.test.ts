@@ -22,6 +22,7 @@ import {
   searchTmdbPl,
   clearTmdbCache,
   clearTmdbHealthTracker,
+  searchTmdbForUi,
 } from "@/lib/tmdb";
 
 const mockFetch = vi.fn();
@@ -1219,5 +1220,136 @@ describe("searchTmdbPl", () => {
     mockFetch.mockResolvedValue({ ok: true, json: async () => plResult({ overview: "" }) });
     const result = await searchTmdbPl("Film", null);
     expect(result!.description).toBeNull();
+  });
+});
+
+describe("searchTmdbForUi — person fallback", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    clearTmdbCache();
+    clearTmdbHealthTracker();
+    process.env.TMDB_API_KEY = "test-key";
+  });
+
+  it("falls back to person filmography when direct movie search is empty", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ results: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          results: [
+            { id: 1, name: "Mia Goth", popularity: 15, known_for_department: "Acting" },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          cast: [
+            {
+              id: 950387,
+              title: "Pearl",
+              release_date: "2022-09-16",
+              genre_ids: [27],
+              vote_average: 7.2,
+              poster_path: "/pearl.jpg",
+              popularity: 30,
+            },
+            {
+              id: 760104,
+              title: "X",
+              release_date: "2022-03-18",
+              genre_ids: [27],
+              vote_average: 6.8,
+              poster_path: "/x.jpg",
+              popularity: 25,
+            },
+          ],
+          crew: [],
+        }),
+      });
+
+    const results = await searchTmdbForUi("mia goth");
+    expect(results).toHaveLength(2);
+    expect(results[0].title).toBe("Pearl");
+    expect(results[1].title).toBe("X");
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      2,
+      expect.stringContaining("/search/person?query=mia%20goth"),
+      expect.any(Object),
+    );
+    expect(mockFetch).toHaveBeenNthCalledWith(
+      3,
+      expect.stringContaining("/person/1/movie_credits"),
+      expect.any(Object),
+    );
+  });
+
+  it("deduplicates person fallback filmography results by tmdb_id", async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ results: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          results: [
+            { id: 10, name: "Director One", popularity: 12, known_for_department: "Directing" },
+            { id: 11, name: "Actor Two", popularity: 11, known_for_department: "Acting" },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          cast: [],
+          crew: [
+            {
+              id: 101,
+              title: "Shared Movie",
+              release_date: "2021-01-01",
+              genre_ids: [18],
+              vote_average: 7.3,
+              poster_path: "/shared-a.jpg",
+              popularity: 18,
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          cast: [
+            {
+              id: 101,
+              title: "Shared Movie",
+              release_date: "2021-01-01",
+              genre_ids: [18],
+              vote_average: 7.3,
+              poster_path: "/shared-b.jpg",
+              popularity: 22,
+            },
+            {
+              id: 102,
+              title: "Unique Movie",
+              release_date: "2020-01-01",
+              genre_ids: [35],
+              vote_average: 6.5,
+              poster_path: "/unique.jpg",
+              popularity: 10,
+            },
+          ],
+          crew: [],
+        }),
+      });
+
+    const results = await searchTmdbForUi("shared person");
+    expect(results).toHaveLength(2);
+    expect(results.map((result) => result.tmdb_id)).toEqual([101, 102]);
+    expect(results[0].poster_url).toContain("/shared-b.jpg");
   });
 });

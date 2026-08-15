@@ -1,4 +1,4 @@
-// tamtam inspected 2026-05-21
+import { enrichMovieMetadata, type MovieInput } from "@/lib/db";
 import type { ScannedFile } from "@/lib/scanner";
 import { cleanTitle } from "@/lib/utils";
 import type Database from "better-sqlite3";
@@ -9,26 +9,46 @@ interface PathlessRow {
   year: number | null;
 }
 
-type PathlessRowTmdbMatch = {
-  tmdb_id?: number | null;
-} | null;
+// Every field is optional: callers frequently know only the tmdb_id, and the
+// link path already falls back per field when one is missing.
+type PathlessRowTmdbMatch = Partial<
+  Pick<
+    MovieInput,
+    "genre" | "imdb_id" | "poster_url" | "rating" | "tmdb_id" | "year"
+  >
+>;
 
 // Try to attach a scanned file to an existing pathless DB row before
-// inserting a new one. Returns true if a row was linked.
+// inserting a new one. Returns the linked row id when a row was linked.
 //
 // Match priority:
 //   1. tmdb_id (when TMDb gave us one)
-//   2. exact LOWER(title) + year IS ?
-//   3. cleanTitle equality + year tolerance (±1 when both years are known)
+//   2. exact LOWER(title) + year IS ? (handles NULL year correctly)
+//   3. cleanTitle equality + year tolerance (±1)
 export function linkToExistingPathlessRow(
   db: Database.Database,
   file: ScannedFile,
-  tmdbMatch: PathlessRowTmdbMatch,
-): boolean {
+  tmdbMatch: PathlessRowTmdbMatch | null,
+): number | null {
   const link = (id: number) => {
     db.prepare(
       "UPDATE movies SET file_path = ?, video_metadata = NULL, created_at = CURRENT_TIMESTAMP WHERE id = ?",
     ).run(file.filePath, id);
+    if (tmdbMatch) {
+      enrichMovieMetadata(db, id, {
+        title: file.parsedTitle,
+        year: tmdbMatch.year ?? file.parsedYear,
+        genre: tmdbMatch.genre ?? null,
+        director: null,
+        rating: tmdbMatch.rating ?? null,
+        poster_url: tmdbMatch.poster_url ?? null,
+        source: null,
+        imdb_id: tmdbMatch.imdb_id ?? null,
+        tmdb_id: tmdbMatch.tmdb_id ?? null,
+        type: "movie",
+      });
+    }
+    return id;
   };
 
   if (tmdbMatch?.tmdb_id) {
@@ -38,8 +58,7 @@ export function linkToExistingPathlessRow(
       )
       .get(tmdbMatch.tmdb_id) as { id: number } | undefined;
     if (byTmdb) {
-      link(byTmdb.id);
-      return true;
+      return link(byTmdb.id);
     }
   }
 
@@ -49,12 +68,11 @@ export function linkToExistingPathlessRow(
     )
     .get(file.parsedTitle, file.parsedYear) as { id: number } | undefined;
   if (byTitleYear) {
-    link(byTitleYear.id);
-    return true;
+    return link(byTitleYear.id);
   }
 
   const wantTitle = cleanTitle(file.parsedTitle).toLowerCase();
-  if (!wantTitle) return false;
+  if (!wantTitle) return null;
 
   const candidates = db
     .prepare(
@@ -67,9 +85,8 @@ export function linkToExistingPathlessRow(
     if (file.parsedYear != null && candidate.year != null) {
       if (Math.abs(candidate.year - file.parsedYear) > 1) continue;
     }
-    link(candidate.id);
-    return true;
+    return link(candidate.id);
   }
 
-  return false;
+  return null;
 }
