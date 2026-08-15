@@ -101,6 +101,7 @@ pnpm backup              # Backup SQLite DB
 │   ├── latest-only-runner.ts         — Utility: run async tasks, discard stale (latest-wins)
 │   ├── scanner.ts                    — Filesystem video scanner + filename parser
 │   ├── subtitles.ts                  — Subtitle format sniffing (SubRip/MicroDVD/MPL2/TMP/VTT/ASS), encoding detection, conversion to SubRip
+│   ├── ffprobe.ts                    — probeFps: video frame rate via ffprobe, used to time frame-based subtitles
 │   ├── hooks/                        — React hooks
 │   │   ├── useLibrary.ts             — Library fetch + filtering state
 │   │   ├── useRecommendations.ts     — Recommendations fetch + state
@@ -291,7 +292,7 @@ TMDB_API_KEY=<your_key> docker run -p 4000:4000 -v $(pwd)/data:/app/data -e TMDB
 
 ## Testing Rules
 
-1. **Test runner:** Vitest (`pnpm test` = `vitest run`; `pnpm test:watch` = interactive). Vitest is configured with `globals: true` — test files use `describe`, `it`, `expect`, `vi`, `beforeEach`, `afterEach` globally without importing them.
+1. **Test runner:** Vitest (`pnpm test` = `vitest run`; `pnpm test:watch` = interactive). Vitest is configured with `globals: true`, but `tsconfig.json` has no `types: ["vitest/globals"]`, so relying on the globals fails `pnpm type-check` (which both lint-staged and the pre-push hook run). Import `describe`, `it`, `expect`, `vi`, `beforeEach`, `afterEach` from `"vitest"` explicitly, as every existing test in `__tests__/` does.
 2. **Tests live in `__tests__/`** and are named `<subject>.test.ts`. No colocated tests.
 3. **Use a real SQLite file for DB tests** (pattern: `new Database(TEST_DB)` + `initDb(db)` in `beforeEach`; close and `unlinkSync` in `afterEach`). Never mock the database layer — integration test against real SQLite.
 4. **Mock external HTTP** (TMDb, CDA) with `vi.fn()` assigned to `global.fetch`. Do not make real network calls in tests.

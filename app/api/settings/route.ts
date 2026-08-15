@@ -103,6 +103,9 @@ export async function PATCH(request: NextRequest) {
   }
   if (typeof body.epg_enabled === "boolean") {
     setSetting(db, "epg_enabled", body.epg_enabled ? "true" : "false");
+    // rescheduleEpgJob refuses to arm the timer while epg_enabled is "false", so the
+    // flag alone decides whether the job runs — it has to re-read it on every toggle.
+    rescheduleEpgJob(db);
   }
   if (typeof body.tv_hide_unrated === "boolean") {
     setSetting(db, "tv_hide_unrated", body.tv_hide_unrated ? "true" : "false");

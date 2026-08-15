@@ -81,6 +81,18 @@ describe("movies/[id] PATCH handler", () => {
     vi.clearAllMocks();
   });
 
+  it("returns 400 for a malformed JSON body instead of throwing", async () => {
+    const req = new NextRequest("http://localhost/api/movies/1", {
+      method: "PATCH",
+      body: "{not json",
+      headers: { "Content-Type": "application/json" },
+    });
+    const res = await PATCH(req, makeParams(movieId));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/invalid json/i);
+  });
+
   it("updates user_rating and returns the updated movie", async () => {
     const res = await PATCH(patchReq({ user_rating: 9 }), makeParams(movieId));
     expect(res.status).toBe(200);
