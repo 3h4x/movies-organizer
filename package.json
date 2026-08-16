@@ -20,10 +20,10 @@
   },
   "dependencies": {
     "better-sqlite3": "^12.9.0",
-    "next": "16.2.4",
+    "next": "16.3.0",
     "qrcode": "^1.5.4",
-    "react": "19.2.5",
-    "react-dom": "19.2.5"
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
   },
   "engines": {
     "node": ">=24 <26"
@@ -31,22 +31,22 @@
   "devDependencies": {
     "@commitlint/cli": "^20.5.0",
     "@commitlint/config-conventional": "^20.5.0",
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@vitejs/plugin-react": "^6.0.1",
+    "@vitejs/plugin-react": "^6.0.5",
     "eslint": "^9",
-    "eslint-config-next": "16.2.4",
+    "eslint-config-next": "16.3.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "tailwindcss": "^4",
-    "tsx": "^4.21.0",
+    "tsx": "^4.23.12",
     "typescript": "^6",
-    "vitest": "^4.1.4"
+    "vitest": "^4.1.10"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
