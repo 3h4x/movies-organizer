@@ -332,6 +332,8 @@ TMDB_API_KEY=<your_key> docker run -p 4000:4000 -v $(pwd)/data:/app/data -e TMDB
 4. **Never add a new dependency without explicit user approval.** Justify every new dep in the commit message.
 5. **Verify new packages before adding:** check npm download counts, publish date, and maintainer history to guard against typosquatting. Flag anything suspicious before installing.
 6. **Inspect lifecycle scripts before approving a dependency update.** `prepare`, `postinstall`, and `install` scripts are code execution and must be treated as a security review point.
+7. **Package versions must be at least 7 days old.** `minimumReleaseAge: 10080` (minutes) in `pnpm-workspace.yaml` blocks freshly published versions, which is when compromised releases are typically caught and unpublished. pnpm 11's own default is only 1440. Setting it explicitly also enables `minimumReleaseAgeStrict`, so an install **fails** instead of silently falling back when nothing is old enough — if you genuinely need a brand-new version, add that package to `minimumReleaseAgeExclude` rather than lowering the threshold. `pnpm install` reports this as "Verifying lockfile against supply-chain policies".
+8. **pnpm 11 is pinned via `packageManager` in `package.json`.** Keep that field in sync with the version in CI and the Dockerfile; the supply-chain settings above are pnpm 11 features and are silently ignored by older releases.
 
 ## Scope & Safety Rules
 

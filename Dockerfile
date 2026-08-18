@@ -2,7 +2,9 @@
 FROM node:24-alpine AS base
 
 # Install pnpm
-RUN corepack enable && corepack prepare pnpm@10.33.2 --activate
+# Keep in sync with "packageManager" in package.json — the supply-chain settings
+# in pnpm-workspace.yaml (minimumReleaseAge) are pnpm 11 behaviour.
+RUN corepack enable && corepack prepare pnpm@11.2.2 --activate
 
 # --- Dependencies ---
 FROM base AS deps
